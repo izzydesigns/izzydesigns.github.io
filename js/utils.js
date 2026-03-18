@@ -9,6 +9,8 @@ export const vec = {
 };
 let camRay = new BABYLON.Ray();
 export let camCollideIgnore = [];
+let desiredCameraDistance = null; // player's intended zoom level, preserved across wall collisions
+let prevCameraRadius = null; // camera.radius set last frame, used to detect BabylonJS scroll changes
 
 // SCENE HELPERS
 /** @desc Initializes the `player.camera` variable with a new ArcRotateCamera named "camera", with its radius set to `gameSettings.defaultCamDist`. Collisions on the camera are also currently enabled (however changing the `camera.ellipsoid` doesn't seem to work) */
@@ -17,6 +19,8 @@ export function initPlayerCamera() {
   player.camera.attachControl(canvas, true); // Attach camera controls to the canvas
   player.camera.wheelPrecision = 15; // How much each scrollwheel scroll zooms the camera in/out
   player.camera.lowerRadiusLimit = 0.01; // How close can the camera come to player
+  desiredCameraDistance = gameSettings.defaultCamDist; // Init desired distance to match starting radius
+  prevCameraRadius = gameSettings.defaultCamDist;
   player.camera.upperRadiusLimit = gameSettings.defaultMaxCamDist; // How far can the camera go from the player
   player.camera.minZ = 0.01; // Distance before camera starts to hide surfaces that are too close
   player.camera.inertia = 0.1;
@@ -135,17 +139,17 @@ export function handlePlayerModel(result) {
   boneTracker.attachToBone(pawBone, skinnedMesh); // Must pass skinnedMesh (not player.mesh) or scale/transform is applied incorrectly
   const pawHitbox = BABYLON.MeshBuilder.CreateBox("pawHitbox", {size:0.1}, scene);
   pawHitbox.isVisible = false; pawHitbox.isPickable = false;
-  const swatHits = new Set(); // Tracks meshes already hit to prevent applying impulse multiple times per swat
+  //let swatHits = []; // Tracks meshes already hit to prevent applying impulse multiple times per swat (NOT ACTUALLY DESIRED BEHAVIOR! commented out)
   scene.onBeforePhysicsObservable.add(() => {
     boneTracker.computeWorldMatrix(true); // Force world matrix update so position reflects current bone state before physics step
     pawHitbox.setAbsolutePosition(boneTracker.getAbsolutePosition());
-    if(!player.swatting){ swatHits.clear(); return; } // Reset hit list each time swat ends so next swat starts fresh
+    if(!player.swatting) /*swatHits = [];*/ return; // Reset hit list each time swat ends so next swat starts fresh
     scene.meshes.forEach(mesh => {
-      if(!mesh.physicsBody || mesh === player.body || swatHits.has(mesh)) return; // Skip non-physics, player body, and already-hit meshes
+      if(!mesh.physicsBody || mesh === player.body) return; // Skip non-physics, player body, and already-hit meshes
       if(pawHitbox.intersectsMesh(mesh, false)){
-        swatHits.add(mesh); // Register hit before applying impulse to ensure it only fires once per mesh per swat
+        //swatHits.push(mesh.name); // Register hit before applying impulse to ensure it only fires once per mesh per swat
         const impulseDir = mesh.getAbsolutePosition().subtract(player.body.position).normalize();
-        mesh.physicsBody.applyImpulse(impulseDir.scale(5), mesh.getAbsolutePosition()); // scale(5) caps max impulse magnitude regardless of animation speed
+        mesh.physicsBody.applyImpulse(impulseDir.scale(player.swatStrength), mesh.getAbsolutePosition()); // scale(5) caps max impulse magnitude regardless of animation speed
         console.log("Swat connected!", mesh.name);
       }
     });
@@ -159,21 +163,42 @@ export function handlePlayerModel(result) {
   );
 }
 export function checkCameraCollision() {
-  const colBuffer = 0.1; // buffer before camera collision occurs (fewer calculations)
-  if(!player.firstPerson) { // Check for camera collisions if in third person mode, but not first person mode
-    camRay.direction = player.camera.position.clone().subtract(player.camera.target).normalize(); // Direction from player to camera
-    camRay.origin = player.camera.target;
-    camRay.length = player.camera.radius + gameSettings.defaultMinCamDist - colBuffer;
-    const hit = scene.pickWithRay(camRay, m => !camCollideIgnore.includes(m), false); // Check if something is blocking the view
-    if (hit && hit.pickedPoint) { // If camera collision detected, override camera radius value
-      player.camera.radius = Math.max(BABYLON.Vector3.Distance(player.camera.target, hit.pickedPoint) - colBuffer, 0.01);
+  if (!player.camera) return;
+  const scrollDelta = player.camera.radius - prevCameraRadius; // detects BabylonJS scroll changes each frame
+  if (player.firstPerson) { // Handle first person mode (if user scrolls/zooms all the way in)
+    if (scrollDelta > 0.01) { // if user scrolls out, exit first person
+      toggleCamView(player.firstPerson = false);
+      desiredCameraDistance = player.camera.radius;
     }
+    prevCameraRadius = player.camera.radius;
+    return;
   }
-  if(player.camera.radius <= gameSettings.defaultMinCamDist + colBuffer){
-    if(!player.firstPerson) { toggleCamView(player.firstPerson = true); }
-  }else{
-    if(player.firstPerson){ toggleCamView(player.firstPerson = false); }
+  const colBuffer = 0.1, dir = player.camera.position.clone().subtract(player.camera.target).normalize();
+  if (scrollDelta > 0.01) { // scrolling out, only accept if no wall blocks the new radius
+    camRay.direction = dir; camRay.origin = player.camera.target; camRay.length = player.camera.radius;
+    const outHit = scene.pickWithRay(camRay, m => !camCollideIgnore.includes(m), false);
+    if (!outHit || !outHit.pickedPoint) {
+      desiredCameraDistance = player.camera.radius; // path clear, accept new distance
+      prevCameraRadius = player.camera.radius;
+      return;
+    }
+  } else if (scrollDelta < -0.01) { // scrolled in, enter first person if already at minimum
+    if (desiredCameraDistance <= gameSettings.defaultMinCamDist + colBuffer) {
+      toggleCamView(player.firstPerson = true);
+      prevCameraRadius = player.camera.radius;
+      return;
+    }
+    desiredCameraDistance = player.camera.radius;
   }
+  // check for wall at desired distance, clamp immediately on hit or lerp back out when clear
+  camRay.direction = dir; camRay.origin = player.camera.target; camRay.length = desiredCameraDistance + colBuffer;
+  const hit = scene.pickWithRay(camRay, m => !camCollideIgnore.includes(m), false);
+  if (hit && hit.pickedPoint) {
+    player.camera.radius = Math.max(BABYLON.Vector3.Distance(player.camera.target, hit.pickedPoint) - colBuffer, 0.01);
+  } else {
+    player.camera.radius = BABYLON.Scalar.Lerp(player.camera.radius, desiredCameraDistance, 0.01);
+  }
+  prevCameraRadius = player.camera.radius;
 }
 /** @desc Registers a per-frame watcher on `targetMesh` that tracks which `_physics_collider` objects are currently intersecting it, updating `player.physicsObjectsTouching` and logging entries/exits */
 export function watchCollider(targetMesh) {
@@ -225,19 +250,6 @@ export function enableOcclusionOn(mesh){
   mesh.occlusionQueryAlgorithmType = BABYLON.AbstractMesh.OCCLUSION_ALGORITHM_TYPE_ACCURATE;
 }
 
-/** @desc Creates looping float and spin BabylonJS animations on a collectable TransformNode, applied once at spawn */
-export function animateCollectable(groupNode) {
-  const fps = 60, amp = 0.1, baseY = groupNode.position.y + 0.25;
-  const floatAnim = new BABYLON.Animation("collectableFloat", "position.y", fps, BABYLON.Animation.ANIMATIONTYPE_FLOAT, BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE);
-  const ease = new BABYLON.SineEase(); ease.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
-  floatAnim.setEasingFunction(ease);
-  floatAnim.setKeys([{ frame: 0, value: baseY }, { frame: 120, value: baseY + amp }, { frame: 240, value: baseY }]);
-  const spinFrames = Math.round((Math.PI * 2) / (gameSettings.defaultCollectableRotSpeed * 0.01)); // Match defaultCollectableRotSpeed
-  const spinAnim = new BABYLON.Animation("collectableSpin", "rotation.y", fps, BABYLON.Animation.ANIMATIONTYPE_FLOAT, BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE);
-  spinAnim.setKeys([{ frame: 0, value: 0 }, { frame: spinFrames, value: Math.PI * 2 }]);
-  scene.beginDirectAnimation(groupNode, [floatAnim], 0, 240, true); // Float and spin loop independently
-  scene.beginDirectAnimation(groupNode, [spinAnim], 0, spinFrames, true);
-}
 
 // MATH HELPERS
 /** @desc Shorthand for `new BABYLON.Vector3(x,y,z)`, use `vec3(x,y,z)` instead for brevity. Default values are `0,0,0`, so `vec3()` is equivalent to `BABYLON.Vector3.Zero()` */

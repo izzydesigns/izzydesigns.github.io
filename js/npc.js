@@ -27,7 +27,8 @@ export async function spawnNPC(npcName, position) {
   // Tag ALL remaining animation groups for this NPC so they get skipped by animation.stopAllAnimations()
   result.animationGroups.forEach(ag => { if (!ag.metadata) ag.metadata = NPC_ANIM_TAG; });
   const npcData = {
-    meshes: result.meshes, // NPC meshes (npcData.meshes[0] = root mesh
+    root: rootMesh, // Root mesh, used for world position in proximity/look detection
+    meshes: result.meshes, // NPC meshes (npcData.meshes[0] = root mesh)
     name: npcName, // Name of NPC (assigned & fetched by level mesh node itself)
     animGroups: result.animationGroups // All animations associated with specified NPC mesh
   };
@@ -53,10 +54,8 @@ export function handleNPCInteractions() {
   if (nowLookingAt !== currentlyLookingAtNPC) {
     currentlyLookingAtNPC = nowLookingAt;
     if (nowLookingAt) {
-      ui.npcPromptName.text(nowLookingAt.name); ui.npcPrompt.show();
-      if(gameSettings.debugMode) console.log("[NPC] Looking at: "+nowLookingAt.name);
-      ui.npcPrompt.removeClass("hidden");
-      console.log(`[NPC] Looking at: "${nowLookingAt.name}"`);
+      ui.npcPromptName.text(nowLookingAt.name); ui.npcPrompt.removeClass("hidden");
+      if(gameSettings.debugMode) console.log(`[NPC] Looking at: "${nowLookingAt.name}"`);
     } else {
       ui.npcPrompt.addClass("hidden");
     }

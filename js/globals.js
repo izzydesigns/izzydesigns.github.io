@@ -23,6 +23,8 @@ export const ui = {
   customize_nameInput: $("#menus .customizationMenu .playerName"),
   customize_finishBtn: $("#menus .customizationMenu .finishCreation"),
   customize_selectFur: $("#menus .customizationMenu #fur-color"),
+  customize_rotateLeft: $("#menus .customizationMenu .rotateLeft"),
+  customize_rotateRight: $("#menus .customizationMenu .rotateRight"),
   // Pause menu buttons
   pause_resumeBtn: $("#menus .pauseMenu .resume"),
   pause_settingsBtn: $("#menus .pauseMenu .settings"),
@@ -44,6 +46,8 @@ export const ui = {
   hudCollectibles: $("#menus .ingameHUDMenu .collectiblesCount"),
   npcPrompt: $("#menus .ingameHUDMenu .npcPrompt"),
   npcPromptName: $("#menus .ingameHUDMenu .npcPromptName"),
+  controlsInfo: $("#menus .controlsInfo"),
+  controlsInfo_dismissBtn: $("#menus .controlsInfo .controlsInfoDismiss"),
 };
 /** @desc Object containing raw `animationGroup` names, multiple animation names provided specify which animations have a follow-up animation that must be played upon completion */
 export const animationData = {
@@ -128,6 +132,7 @@ export const gameSettings = {
     "pause": ui.pauseMenu,
     "settings": ui.settingsMenu,
     "customization": ui.customizationMenu,
+    "controls": ui.controlsInfo,
     "cutscene": ui.cutsceneOverlayMenu, // previously titlecard
   },
   defaultMenu: "main", // Menu to be shown upon scene initialization
@@ -174,6 +179,7 @@ export const player = {
   curAnimation: gameSettings.defaultIdleAnimation, isAnimTransitioning: false, lastAnimation: undefined,
   collectableCount: 0, allCollected: false,
   lastSwatTime: performance.now(), swatting: false,
+  swatStrength: 3,
   respawnPoint: new BABYLON.Vector3(0,0,0),
   tutorialMode: false,
   curMode: "default", modes: ["default","zoomies","sneak"], // TODO: Implement me! :)

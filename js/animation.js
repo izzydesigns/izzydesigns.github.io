@@ -56,6 +56,33 @@ export function handleAnimations() {
   stopAllAnimations();
   playAnimation(newState);
 }
+/** @desc Creates looping float and spin BabylonJS animations on a collectable TransformNode, applied once at spawn */
+export function animateCollectable(groupNode) {
+  const fps = 60, amp = 0.1, baseY = groupNode.position.y + 0.25;
+  const floatAnim = new BABYLON.Animation("collectableFloat", "position.y", fps, BABYLON.Animation.ANIMATIONTYPE_FLOAT, BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE);
+  const ease = new BABYLON.SineEase(); ease.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
+  floatAnim.setEasingFunction(ease);
+  floatAnim.setKeys([{ frame: 0, value: baseY }, { frame: 120, value: baseY + amp }, { frame: 240, value: baseY }]);
+  const spinFrames = Math.round((Math.PI * 2) / (gameSettings.defaultCollectableRotSpeed * 0.01)); // Match defaultCollectableRotSpeed
+  const spinAnim = new BABYLON.Animation("collectableSpin", "rotation.y", fps, BABYLON.Animation.ANIMATIONTYPE_FLOAT, BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE);
+  spinAnim.setKeys([{ frame: 0, value: 0 }, { frame: spinFrames, value: Math.PI * 2 }]);
+  scene.beginDirectAnimation(groupNode, [floatAnim], 0, 240, true); // Float and spin loop independently
+  scene.beginDirectAnimation(groupNode, [spinAnim], 0, spinFrames, true);
+}
+/** @desc Creates a looping rainbow Color3 animation on a collectable mesh's outlineColor */
+export function animateCollectableColor(mesh) {
+  const colorAnim = new BABYLON.Animation("collectableColor", "outlineColor", 60, BABYLON.Animation.ANIMATIONTYPE_COLOR3, BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE);
+  colorAnim.setKeys([
+    { frame:   0, value: new BABYLON.Color3(1, 0, 0) }, // red
+    { frame:  60, value: new BABYLON.Color3(1, 1, 0) }, // yellow
+    { frame: 120, value: new BABYLON.Color3(0, 1, 0) }, // green
+    { frame: 180, value: new BABYLON.Color3(0, 1, 1) }, // cyan
+    { frame: 240, value: new BABYLON.Color3(0, 0, 1) }, // blue
+    { frame: 300, value: new BABYLON.Color3(1, 0, 1) }, // magenta
+    { frame: 360, value: new BABYLON.Color3(1, 0, 0) }, // red
+  ]);
+  scene.beginDirectAnimation(mesh, [colorAnim], 0, 360, true);
+}
 /** @desc Animation playing handler (allows looping, start, and stop time specification per animation) */
 export function playAnimation(newAnim, loop = true, startFrame = 0, endFrame = undefined) {
   if(Array.isArray(newAnim) && newAnim[0] !== player.curAnimation[0]) {

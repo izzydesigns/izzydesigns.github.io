@@ -34,6 +34,8 @@ export function initScreenElements () {
     if(dialog.isDialogPlaying() && dialog.isDialogPaused())dialog.resumeDialog();
     game.curMenu = (game.prevMenu === "customization" || game.prevMenu === "cutscene")?game.prevMenu:"ingame";updateMenus();
     canvas.requestPointerLock();
+    canvas.focus();
+    player.isAfk = false; player.lastMoveTime = performance.now();
   });
   ui.pause_settingsBtn.click(() => {game.curMenu = "settings";updateMenus();});
   ui.pause_mmBtn.click(() => {game.curMenu = "main";updateMenus();});
@@ -63,17 +65,27 @@ export function initScreenElements () {
     player.jumpHeight = newJumpHeight;
   });
   // Customization menu input handlers
-  ui.customize_finishBtn.click(async () => {
+  ui.customize_finishBtn.click(() => {
     if(ui.customize_nameInput.val().length > 0){
       // Sanitize player.name before assigning (only allows letters/numbers and - _ symbols)
       player.name = ui.customize_nameInput.val().replace(/[^a-zA-Z0-9_-]/g, '');
-      game.curMenu = "ingame";updateMenus();
-      await canvas.requestPointerLock();
-      player.camera.radius = gameSettings.defaultCamDist;
-      scene.getMeshByName("camOffset").position.y += 0.1;
-      teleportPlayer(player.respawnPoint); // Tele player to level respawn point
+      game.curMenu = "controls"; updateMenus();
     }else{ console.error("no player name specified, notify the user or something"); }
   });
+  ui.controlsInfo_dismissBtn.click(async () => {
+    game.curMenu = "ingame"; updateMenus();
+    await canvas.requestPointerLock();
+    canvas.focus(); // Ensures BabylonJS keyboard listeners receive input immediately without requiring a click
+    player.camera.radius = gameSettings.defaultCamDist;
+    scene.getMeshByName("camOffset").position.y += 0.1;
+    teleportPlayer(player.respawnPoint); // Tele player to level respawn point
+    player.isAfk = false; player.lastMoveTime = performance.now();
+  });
+  let rotateInterval = null;
+  const stopRotate = () => { clearInterval(rotateInterval); rotateInterval = null; };
+  ui.customize_rotateLeft.on('mousedown', () => { rotateInterval = setInterval(() => { player.camera.alpha -= 0.02; }, 16); });
+  ui.customize_rotateRight.on('mousedown', () => { rotateInterval = setInterval(() => { player.camera.alpha += 0.02; }, 16); });
+  $(document).on('mouseup', stopRotate);
   ui.customize_selectFur.on('change', function() {
     let selectedValue = $(this).val(), selectedText = $(this).find('option:selected').text();
     switch(selectedValue){

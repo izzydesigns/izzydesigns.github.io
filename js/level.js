@@ -1,9 +1,7 @@
 import {player, scene} from "./globals.js";
 import {
-  animateCollectable,
   camCollideIgnore,
   copyPosScaleRotFromTo,
-  enableOcclusionOn,
   loadMesh,
   meshCollisionCallback,
   teleportPlayer
@@ -11,6 +9,7 @@ import {
 import {collidersToRaycastOn} from "./movement.js";
 import * as utils from "./utils.js";
 import * as npc from "./npc.js";
+import * as animation from "./animation.js";
 
 const assetDir = './res/models/';
 const assetList = {
@@ -61,11 +60,12 @@ export function handleLevelModel(result) {
         if (!groupNode) { // Create parent "collectable" transform node if one doesn't already exist for this mesh
           groupNode = new BABYLON.TransformNode("collectable_" + collectableName, scene);
           copyPosScaleRotFromTo(curGeo, groupNode);
-          animateCollectable(groupNode); // Apply looping float + spin once at spawn
+          animation.animateCollectable(groupNode); // Apply looping float + spin once at spawn
           totalCollectibles++;
         }
-        curGeo.outlineColor = new BABYLON.Color3(0,1,0); // custom outline color
-        curGeo.outlineWidth = 0.01; // custom outline width
+        curGeo.outlineColor = new BABYLON.Color3(1,1,1); // set initial color before rainbow animation takes over
+        curGeo.outlineWidth = 0.02; // custom outline width
+        animation.animateCollectableColor(curGeo); // rainbow outline cycle
         curGeo.parent = groupNode; // Set subgeometry parent to groupNode transform node
         groupNode.parent = collectablesParent; // Set collectable groupNode parent to collectablesParent main node
         curGeo.metadata = { parentNode: groupNode }; // apparently transform nodes don't count as parents or something... but this fixes that
@@ -112,28 +112,56 @@ export function handleLevelModel(result) {
         } else { console.log("Unknown geometry: geoName = " + geoName); }
       }
   }
+  const hashGroups = new Map(); // groupId → { rootBody, container }
+
   for (const [baseName, meshes] of physicsGroups) {
-    // Detach all submeshes from the GLB __root__ so their world transforms are fully baked into local space
     meshes.forEach(m => { m.setParent(null); m.computeWorldMatrix(true); });
     let physicsBody;
-    if (meshes.length === 1) { // Single mesh, apply convex hull directly, no merge needed
+    if (meshes.length === 1) {
       physicsBody = meshes[0];
-    } else { // Multiple _primitive submeshes, merge ALL into one invisible mesh so Havok generates a single convex hull that covers the entire object, not one per primitive.
-      // MergeMeshes bakes each source world matrix into vertex data; the result sits at origin with world-space vertex positions.
+    } else {
       const merged = BABYLON.Mesh.MergeMeshes(meshes, false, true, undefined, false, false);
       if (!merged) { console.warn(`[Physics] MergeMeshes failed for "${baseName}", skipping`); continue; }
       const pivot = merged.getBoundingInfo().boundingBox.centerWorld.clone();
-      // Recenter & bake bounding box center OUT of the merged mesh vertex position
       merged.bakeTransformIntoVertices(BABYLON.Matrix.Translation(-pivot.x, -pivot.y, -pivot.z));
-      merged.position = pivot; // Assign correct position AFTER vertex merge
+      merged.position = pivot;
       merged.name = baseName + "_physicsBody";
       merged.isVisible = false;
-      meshes.forEach(m => m.setParent(merged)); // Preserves world position of each visual submesh
+      meshes.forEach(m => m.setParent(merged));
       physicsBody = merged;
     }
-    // Create convex hull collider for physics body (handles multi-mesh physics bodies as well)
-    new BABYLON.PhysicsAggregate(physicsBody, BABYLON.PhysicsShapeType.CONVEX_HULL, {mass: 1, friction: 0.5}, scene);
-    physicsBody.parent = physicsParent;
+
+    const hashIdx = baseName.indexOf('#');
+    if (hashIdx !== -1) {
+      const groupId = baseName.slice(hashIdx + 1);
+      let groupNode = scene.getTransformNodeByName(groupId);
+      if (!groupNode) { groupNode = new BABYLON.TransformNode(groupId, scene); groupNode.parent = physicsParent; }
+
+      if (!hashGroups.has(groupId)) {
+        // First mesh with this tag becomes the root compound body
+        const container = new BABYLON.PhysicsShapeContainer(scene);
+        const body = new BABYLON.PhysicsBody(physicsBody, BABYLON.PhysicsMotionType.DYNAMIC, false, scene);
+        container.addChildFromParent(physicsBody, new BABYLON.PhysicsShapeConvexHull(physicsBody, scene), physicsBody);
+        body.shape = container;
+        body.setMassProperties({ mass: 1, friction: 0.5, restitution: 0.15 });
+        body.disablePreStep = false;
+        hashGroups.set(groupId, { rootBody: physicsBody, container });
+        physicsBody.parent = groupNode;
+      } else {
+        // Subsequent mesh, add its hull to the root's container, parent visually to root
+        const { rootBody, container } = hashGroups.get(groupId);
+        container.addChildFromParent(rootBody, new BABYLON.PhysicsShapeConvexHull(physicsBody, scene), physicsBody);
+        physicsBody.setParent(rootBody); // preserves world position
+      }
+    } else {
+      const bb = physicsBody.getBoundingInfo().boundingBox;
+      const massScalingVal = 10; // Value to multiply the physicsBody bounding box volume amount by, for dynamically calculating total object mass
+      const mass = Math.min(50, Math.max(0.1, // Lock mass value between 50 and 0.1
+        (bb.maximumWorld.x - bb.minimumWorld.x) * (bb.maximumWorld.y - bb.minimumWorld.y) * (bb.maximumWorld.z - bb.minimumWorld.z) * massScalingVal
+      ));
+      new BABYLON.PhysicsAggregate(physicsBody, BABYLON.PhysicsShapeType.CONVEX_HULL, {mass, friction: 0.5}, scene);
+      physicsBody.parent = physicsParent;
+    }
     collidersToRaycastOn.push(physicsBody);
   }
   for(let data of result.transformNodes){
@@ -158,7 +186,7 @@ export function handleLevelModel(result) {
     // Load scene lights (and fix intensity)
     //light.intensity *= 0.0025; // Fix for intensity scaling issue, adjust as necessary
   }
-  utils.watchCollider(scene.getMeshByName("CatBed_Torus_collider"));
+  //utils.watchCollider(scene.getMeshByName("CatBed_Torus_collider")); // TODO: seemingly not working anymore? double check later on
 }
 
 /** @desc Shorthand for `await loadMesh()` and chooses `whichLevel` from `level.assetList.levels[]` */

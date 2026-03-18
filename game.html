@@ -24,7 +24,7 @@
         <h6 style="font-style:italic">What will happen next? Let's find out!</h6>
         <hr><br>
         <button class="play btn">▶️ Play</button><br>
-        <button class="settings btn">⚙️ Settings</button><br>
+<!--        <button class="settings btn">⚙️ Settings</button><br>-->
         <button class="exit btn">❌ Exit</button>
       </div>
     </div>
@@ -89,6 +89,30 @@
       <div class="dialogBar topbar"></div>
       <div class="dialogBar bottombar"></div>
     </div>
+    <!-- Controls Popup -->
+    <div class="controlsInfo fullscreen">
+      <div>
+        <h2>Controls</h2>
+        <hr>
+        <table>
+          <tr><td><b>Left Mouse (hold)</b></td><td>Swat your paw</td></tr>
+          <tr><td><b>W / A / S / D</b></td><td>Move</td></tr>
+          <tr><td><b>Space</b></td><td>Jump</td></tr>
+          <tr><td><b>Left Shift</b></td><td>Sprint</td></tr>
+          <tr><td><b>Left Alt</b></td><td>Walk slowly</td></tr>
+          <tr><td><b>E</b></td><td>Interact / Talk to NPCs</td></tr>
+          <tr><td><b>Scroll wheel</b></td><td>Zoom camera in/out (scroll to min = first person)</td></tr>
+          <tr><td><b>ESC</b></td><td>Pause</td></tr>
+        </table>
+        <hr>
+        <p><i>!!! EARLY TECHNICAL DEMO !!!</i>
+          <br>There is no game here yet. This is just a proof of concept to get a feel for the movement and physics!
+          <br>NPCs do not currently do anything after pressing E. There are some known physics collision bugs, and some animation bugs are also known already. All UI is placeholder UI.
+          <br>Please do not judge the "game" based on what you experience in this demo! I will fix basically everything later :)
+        </p>
+        <button class="controlsInfoDismiss btn">Got it, let me play!</button>
+      </div>
+    </div>
     <!-- Ingame HUD Overlay -->
     <div class="ingameHUDMenu clickThrough">
       <div class="npcPrompt hidden">Press 'E' to talk to <span class="npcPromptName"></span></div>
@@ -111,8 +135,8 @@
       <div>
         <button class="resume btn">Resume</button>
         <br>
-        <button class="settings btn">Settings</button>
-        <br>
+<!--        <button class="settings btn">Settings</button>-->
+<!--        <br>-->
         <button class="mainmenu btn">Main Menu</button>
       </div>
       <br>
