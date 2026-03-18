@@ -90,19 +90,21 @@ export function handleLevelModel(result) {
           if (geoName.includes("_collider")) {
             colliderMesh = BABYLON.MeshBuilder.CreateBox(geoName, { width: bbWidth, height: bbHeight, depth: bbDepth }, scene);
             colliderMesh.position = localBB.centerWorld.clone();
+            colliderMesh.rotationQuaternion = meshRot;
             new BABYLON.PhysicsAggregate(colliderMesh, BABYLON.PhysicsShapeType.BOX, {mass: 0, friction: 0.5}, scene);
           }else if(geoName.includes("_sphCollider")){
             const radius = Math.max(bbWidth, bbHeight, bbDepth) / 2;
             colliderMesh = BABYLON.MeshBuilder.CreateSphere(geoName, {diameter: radius * 2}, scene);
             colliderMesh.position = localBB.centerWorld.clone();
+            colliderMesh.rotationQuaternion = meshRot;
             new BABYLON.PhysicsAggregate(colliderMesh, BABYLON.PhysicsShapeType.SPHERE, {mass: 0, friction: 0.5}, scene);
           }else if(geoName.includes("_cylCollider")){
             const radius = Math.max(bbWidth, bbDepth) / 2;
             colliderMesh = BABYLON.MeshBuilder.CreateCylinder(geoName, {height: bbHeight, diameter: radius * 2}, scene);
             colliderMesh.position = localBB.centerWorld.clone();
+            colliderMesh.rotationQuaternion = meshRot;
             new BABYLON.PhysicsAggregate(colliderMesh, BABYLON.PhysicsShapeType.CYLINDER, { mass: 0, friction: 0.5 }, scene);
           }
-          colliderMesh.rotationQuaternion = meshRot;
           colliderMesh.parent = collisionParent;
           colliderMesh.visibility = 0;
           collidersToRaycastOn.push(colliderMesh);
