@@ -27,6 +27,7 @@ export const ui = {
   customize_rotateRight: $("#menus .customizationMenu .rotateRight"),
   // Pause menu buttons
   pause_resumeBtn: $("#menus .pauseMenu .resume"),
+  pause_controlsBtn: $("#menus .pauseMenu .controls"),
   pause_settingsBtn: $("#menus .pauseMenu .settings"),
   pause_mmBtn: $("#menus .pauseMenu .mainmenu"),
   // Main menu buttons

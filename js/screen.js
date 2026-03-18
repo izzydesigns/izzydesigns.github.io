@@ -37,6 +37,7 @@ export function initScreenElements () {
     canvas.focus();
     player.isAfk = false; player.lastMoveTime = performance.now();
   });
+  ui.pause_controlsBtn.click(() => {game.curMenu = "controls"; updateMenus();});
   ui.pause_settingsBtn.click(() => {game.curMenu = "settings";updateMenus();});
   ui.pause_mmBtn.click(() => {game.curMenu = "main";updateMenus();});
   // Settings menu input handlers
@@ -73,6 +74,7 @@ export function initScreenElements () {
     }else{ console.error("no player name specified, notify the user or something"); }
   });
   ui.controlsInfo_dismissBtn.click(async () => {
+    if (game.prevMenu === "pause") { game.curMenu = "pause"; updateMenus(); return; }
     game.curMenu = "ingame"; updateMenus();
     await canvas.requestPointerLock();
     canvas.focus(); // Ensures BabylonJS keyboard listeners receive input immediately without requiring a click
