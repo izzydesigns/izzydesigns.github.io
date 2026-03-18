@@ -55,8 +55,10 @@ export function handleNPCInteractions() {
     if (nowLookingAt) {
       ui.npcPromptName.text(nowLookingAt.name); ui.npcPrompt.show();
       if(gameSettings.debugMode) console.log("[NPC] Looking at: "+nowLookingAt.name);
+      ui.npcPrompt.removeClass("hidden");
+      console.log(`[NPC] Looking at: "${nowLookingAt.name}"`);
     } else {
-      ui.npcPrompt.hide();
+      ui.npcPrompt.addClass("hidden");
     }
   }
 }
