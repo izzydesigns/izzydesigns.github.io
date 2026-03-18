@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<!-- If you're reading this, Izzy thinks you're cool :3 -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/x-icon" href="/res/icon.ico">
+  <title>Yarn ball! - DEMO (Early Access)</title>
+  <link rel="stylesheet" href="css/reset.css">
+  <link rel="stylesheet" href="css/main.css">
+  <script defer src="https://cdn.babylonjs.com/babylon.js"></script> <!-- Gets the latest version of Babylon -->
+  <script defer src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.js"></script>
+  <!--<script defer src="https://cdn.babylonjs.com/inspector/babylon.inspector.bundle.js"></script>-->
+  <script defer src="js/lib/jquery-3.7.1.js"></script>
+</head>
+<body>
+  <div id="loadingScreen">Loading...</div>
+  <div id="menus" class="fullscreen clickThrough">
+    <!-- Main Menu -->
+    <div class="mainMenu fullscreen">
+      <div>
+        <h1>Yarn ball! 🧶</h1>
+        <h4>The game description will go here, but this is just placeholder text for now...</h4>
+        <h6 style="font-style:italic">What will happen next? Let's find out!</h6>
+        <hr><br>
+        <button class="play btn">▶️ Play</button><br>
+        <button class="settings btn">⚙️ Settings</button><br>
+        <button class="exit btn">❌ Exit</button>
+      </div>
+    </div>
+    <!-- Character Customization Menu -->
+    <div class="customizationMenu fullscreen">
+      <h1>🐈 Character Creation</h1>
+      <label>Character Name: <input type="text" class="playerName" value="Player"></label>
+      <div class="cosmetics">
+        <button class="rotateLeft btn">&lt;</button>
+        <label for="fur-color">Fur color:</label>
+        <select id="fur-color" name="furColor">
+          <option value="default">Smokey</option>
+          <option value="white">White</option>
+          <option value="garfield">Lasagna</option>
+          <option value="naked">Sphynx</option>
+        </select>
+        <button class="rotateRight btn">&gt;</button>
+        <br><br>
+        <button class="finishCreation btn">Finish</button>
+      </div>
+    </div>
+    <!-- Settings Menu -->
+    <div class="settingsMenu fullscreen">
+      <h1>⚙️ Settings</h1>
+      <h6><i>Adjust various game settings</i></h6>
+      <hr>
+      <div class="settings-panel">
+        <h6 style="font-style:italic">Save game progress <b>(Export to file recommended)</b>:</h6>
+        <button class="save_local btn">💾 Save game data (local browser storage)</button>
+        <br>
+        <button class="save_export btn">📤 Export game data (to save.txt file)</button>
+        <br>
+        <button class="save_export btn">📥 Import game data (from save.txt file)</button>
+        <hr>
+        <h6 style="font-style:italic">Override player parameters <b>(Debug mode only)</b>:</h6>
+        <label for="moveSpeed">Walk speed:</label>
+        <input type="number" id="moveSpeed" max="100" min="0">
+        <button id="moveSpeedApply" class="walkApply btn">Apply</button>
+        <br>
+        <label for="sprintSpeed">Sprint speed:</label>
+        <input type="number" id="sprintSpeed" max="100" min="0">
+        <button id="sprintSpeedApply" class="sprintApply btn">Apply</button>
+        <br>
+        <label for="jumpHeight">Jump Height:</label>
+        <input type="number" id="jumpHeight" max="100" min="0">
+        <button id="jumpHeightApply" class="jumpApply btn">Apply</button>
+        <hr>
+        <label>Debug mode: <span class="debugMode">❌</span></label>
+        <button class="debugToggle btn">Toggle Debug mode</button>
+        <hr>
+        <button class="back btn">Back to previous menu</button>
+      </div>
+    </div>
+    <!-- Dialog/Cutscene Overlay -->
+    <div class="cutsceneOverlay">
+      <div class="keyPressProgress"></div><!--Progress bar for confirming a keypress-->
+      <p class="titlecardText"></p>
+      <p class="subtitleText"></p>
+      <p class="charText"></p>
+      <p class="dialogText"></p>
+      <ul class="dialogChoices"></ul>
+      <div class="dialogBar topbar"></div>
+      <div class="dialogBar bottombar"></div>
+    </div>
+    <!-- Ingame HUD Overlay -->
+    <div class="ingameHUDMenu clickThrough">
+      <div class="npcPrompt hidden">Press 'E' to talk to <span class="npcPromptName"></span></div>
+      <!-- Other HUD items TODO: mostly debug items, remove later -->
+      <div><b>Collectables</b>: <span class="collectablesCount"></span></div>
+      <div><b>Speed</b>: <span class="value1"></span></div>
+      <div><b>On ground</b>: <span class="value2"></span></div>
+      <div><b>Sliding on slope</b>: <span class="value3"></span> (ground angle: <span class="value4"></span>deg)</div>
+      <div><b>FPS</b>: <span class="value5"></span></div>
+      <div><b>Position</b>: <span class="x_value"></span>x, <span class="y_value"></span>y, <span class="z_value"></span>z</div>
+      <div class="progress">
+        <div class="progress-bar"></div>
+      </div>
+    </div>
+    <!-- Ingame Pause Menu -->
+    <div class="pauseMenu">
+      <br>
+      <h1>🐾 Game Paws-ed 🐾</h1>
+      <hr>
+      <div>
+        <button class="resume btn">Resume</button>
+        <br>
+        <button class="settings btn">Settings</button>
+        <br>
+        <button class="mainmenu btn">Main Menu</button>
+      </div>
+      <br>
+      <br>
+    </div>
+  </div>
+  <canvas id="renderCanvas" class="fullscreen" touch-action="none"></canvas>
+  <script type="module" src="js/game.js"></script>
+</body>
+</html>

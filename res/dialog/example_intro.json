@@ -1,0 +1,153 @@
+{
+  "start": "exposition_titlescreen",
+  "nodes": {
+    "exposition_titlescreen": {
+      "title": "Yarn Ball",
+      "background": "black",
+      "delay": 2000,
+      "next": "exposition_titlescreen2"
+    },
+    "exposition_titlescreen2": {
+      "title": "Yarn Ball",
+      "subtitle": "A cute game where you solve puzzles using courage and curiosity!",
+      "delay": 5000,
+      "next": "start"
+    },
+    "start": {
+      "character": "Narrator",
+      "text": "Ah hello! Welcome to my domain... what do you think?",
+      "background": "transparent",
+      "cameraTarget": [0,2,0],
+      "cameraAngles": { "yaw": 0, "pitch": 0, "distance": 1.0 },
+      "choices": [
+        {
+          "text": "I don't see anything...",
+          "next": "sees_nothing"
+        },
+        {
+          "text": "Looks like a blank canvas to me",
+          "next": "sees_potential"
+        },
+        {
+          "text": "(Say nothing)",
+          "next": "sees_hesitant"
+        }
+      ]
+    },
+    "sees_nothing": {
+      "text": "Well that's simply because, well... uhh, because there IS nothing! Keen observation skills...",
+      "next": "exposition_1"
+    },
+    "sees_potential": {
+      "text": "Ah, it seems you have a keen eye for potential! That's very good!",
+      "next": "exposition_1"
+    },
+    "sees_hesitant": {
+      "text": "Not amused? I see.",
+      "next": "exposition_1"
+    },
+    "exposition_1": {
+      "text": "...well let's fix that, shall we?",
+      "next": "exposition_2"
+    },
+    "exposition_2": {
+      "character": "The World",
+      "text": "*shifts subtly*",
+      "cameraTarget": "player",
+      "cutsceneBars": true,
+      "next": "exposition_3"
+    },
+    "exposition_3": {
+      "character": "Narrator",
+      "text": "Ah, that's better... no? What do you think now?",
+      "choices": [
+        {
+          "text": "Much better!",
+          "next": "change_better"
+        },
+        {
+          "text": "Eh, not really...",
+          "next": "change_worse"
+        },
+        {
+          "text": "(Stay silent)",
+          "next": "change_neutral"
+        }
+      ]
+    },
+    "change_worse": {
+      "text": "Oh don't worry, we won't be here long anyways...",
+      "next": "isready"
+    },
+    "change_neutral": {
+      "text": "Wow, that bad huh? Don't worry we won't be here long...",
+      "next": "isready"
+    },
+    "change_better": {
+      "text": "Oh good! That's just a taste of what's yet to come though...",
+      "next": "isready"
+    },
+    "isready": {
+      "text": "Are you ready?",
+      "choices": [
+        {
+          "text": "Wait... ready for what? I'm confused?",
+          "next": "exposition_end_1"
+        },
+        {
+          "text": "Totally!!!",
+          "next": "exposition_end_1"
+        },
+        {
+          "text": "(Absolute silence)",
+          "next": "exposition_end_2"
+        }
+      ]
+    },
+    "exposition_end_1": {
+      "text": "Naturally! All will be revealed in due time, but for now, I can share with you this: The intention of this experiment is to help you understand yourself better.",
+      "next": "exposition_end_4"
+    },
+    "exposition_end_2": {
+      "text": "The intention of this experiment is to help you understand yourself better. I can already tell your eagerness will carry you very far in this experience.",
+      "next": "exposition_end_3"
+    },
+    "exposition_end_3": {
+      "text": "I ask you to answer the questions in this game how you would answer them if being asked in a real life situation. Play as yourself, and I'll help you learn a lot about yourself at the end, but only if you trust me...",
+      "next": "exposition_end_4"
+    },
+    "exposition_end_4": {
+      "text": "Do you trust me?",
+      "choices": [
+        {
+          "text": "Yes",
+          "next": "final_1"
+        },
+        {
+          "text": "No",
+          "next": "final_2"
+        },
+        {
+          "text": "(Refuse to answer)",
+          "next": "final_3"
+        }
+      ]
+    },
+    "final_1": {
+      "text": "Alright. I believe you are ready. Let's begin, for real this time...",
+      "next": "final_4"
+    },
+    "final_2": {
+      "text": "I understand. That's probably smartest. I hope with time you will come to realize my intentions are genuine. For now though, let's proceed...",
+      "next": "final_4"
+    },
+    "final_3": {
+      "text": "...well you're still here, so that must mean you want to find out what happens next... let's find out together, shall we?",
+      "next": "final_4"
+    },
+    "final_4": {
+      "character": "You",
+      "text": "*You wake from a long, exhausted nap* So tired... ugh... and such a weird dream too... what was all that about??? I wonder who that voice I was speaking to was... ah whatever, I'm too hungry to think right now..."
+    }
+  }
+}
