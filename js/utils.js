@@ -1,5 +1,6 @@
 import {canvas, engine, game, gameSettings, player, scene} from "./globals.js";
 import * as level from "./level.js";
+import * as movement from "./movement.js";
 
 /** @desc Vector shorthands (aka use `vec.up` for `BABYLON.Vector3.Up()`, `vec.down` for `BABYLON.Vector3.Down()`, and also added left right forward and backward vectors). */
 export const vec = {
@@ -7,25 +8,38 @@ export const vec = {
   right: vec3(1,0,0),   left: vec3(-1,0,0),
   forward: vec3(0,0,1), backward: vec3(0,0,-1),
 };
-let camRay = new BABYLON.Ray();
-export let camCollideIgnore = [];
-let desiredCameraDistance = null; // player's intended zoom level, preserved across wall collisions
-let prevCameraRadius = null; // camera.radius set last frame, used to detect BabylonJS scroll changes
-
 // SCENE HELPERS
-/** @desc Initializes the `player.camera` variable with a new ArcRotateCamera named "camera", with its radius set to `gameSettings.defaultCamDist`. Collisions on the camera are also currently enabled (however changing the `camera.ellipsoid` doesn't seem to work) */
+/** @desc Initializes the `player.camera` variable with a new ArcRotateCamera named "camera", with its radius set to `gameSettings.defaultCamDist`. Hooks into Babylon's onAfterCheckInputsObservable for raycast-based camera zoom collision, so it runs at the same time as Babylon's own camera update. */
 export function initPlayerCamera() {
   player.camera = new BABYLON.ArcRotateCamera("camera", Math.PI / 2, Math.PI / 4, gameSettings.defaultCamDist, undefined, scene);
   player.camera.attachControl(canvas, true); // Attach camera controls to the canvas
   player.camera.wheelPrecision = 15; // How much each scrollwheel scroll zooms the camera in/out
   player.camera.lowerRadiusLimit = 0.01; // How close can the camera come to player
-  desiredCameraDistance = gameSettings.defaultCamDist; // Init desired distance to match starting radius
-  prevCameraRadius = gameSettings.defaultCamDist;
   player.camera.upperRadiusLimit = gameSettings.defaultMaxCamDist; // How far can the camera go from the player
   player.camera.minZ = 0.01; // Distance before camera starts to hide surfaces that are too close
   player.camera.inertia = 0.1;
   player.camera.speed = 100;
   player.camera.fov = 1; // Default is 0.8 radians (~1/4th pi, somewhat small), so we increase it
+  // Raycast-based camera zoom collision (hooked directly into Babylon's camera input cycle)
+  const camRay = new BABYLON.Ray();
+  let desiredCameraDistance = gameSettings.defaultCamDist; // player's intended zoom, preserved across wall hits
+  let prevCameraRadius = gameSettings.defaultCamDist;
+  player.camera.onAfterCheckInputsObservable.add(() => {
+    if (Math.abs(player.camera.radius - prevCameraRadius) > 0.01) desiredCameraDistance = player.camera.radius;
+    // Raycast from camera target (near player) outward toward the camera
+    camRay.origin = player.camera.target.clone();
+    camRay.direction = player.camera.position.subtract(player.camera.target).normalize();
+    camRay.length = desiredCameraDistance;
+    // Only test visible level geometry, invisible colliders are filtered by isVisible, player mesh excluded explicitly
+    const ignoreMeshes = [player.body, player.mesh, scene.getMeshByName("Player_geometry"), scene.getMeshByName("camOffset")];
+    const hit = scene.pickWithRay(camRay, m => m.isVisible && m.visibility > 0 && !ignoreMeshes.includes(m));
+    if (hit?.pickedPoint) {
+      player.camera.radius = Math.max(BABYLON.Vector3.Distance(player.camera.target, hit.pickedPoint) - 0.05, player.camera.lowerRadiusLimit);
+    } else {
+      player.camera.radius = BABYLON.Scalar.Lerp(player.camera.radius, desiredCameraDistance, 0.1);
+    }
+    prevCameraRadius = player.camera.radius;
+  });
 }
 /** @desc Pauses the game using `engine.stopRenderLoop()`, and sets `scene.animationsEnabled` to `false` to pause animations. */
 export function pauseScene() {
@@ -116,11 +130,7 @@ export function handlePlayerModel(result) {
   player.body.physicsBody.disablePreStep = false; // Allow mesh transform to sync into Havok each prestep (enables direct position/rotation control)
   player.body.physicsBody.setAngularDamping(0);
   player.body.physicsBody.setCollisionCallbackEnabled(true);
-  player.body.physicsBody.getCollisionObservable().add((event) => {
-    if (event.type === BABYLON.PhysicsEventType.COLLISION_FINISHED) return;
-    const playerUp = BABYLON.Vector3.TransformNormal(vec3(0,1,0), BABYLON.Matrix.FromQuaternionToRef(player.body.rotationQuaternion ?? BABYLON.Quaternion.Identity(), BABYLON.Matrix.Identity()));
-    if (BABYLON.Vector3.Dot(event.normal, playerUp) < -0.5) player.onGround = true; // Contact normal opposes player local up = bottom of collider hit something
-  });
+  player.body.physicsBody.getCollisionObservable().add(movement.checkOnGround);
   player.body.isVisible = gameSettings.debugMode; // Initialize player.body visibility based on initial `debugMode` status
   player.body.position = gameSettings.defaultSpawnPoint; // Teleports mesh to defaultSpawnPoint if the level being loaded does not specify a spawn point
   player.mesh.position.addInPlace(vec3(0,-0.49, 0));
@@ -155,52 +165,8 @@ export function handlePlayerModel(result) {
     });
   });
 
-  camCollideIgnore.push(
-    scene.getMeshByName(player.mesh.getChildren()[0].getChildren()[2].name), // `player.mesh` mesh name (named `playerMesh`)
-    scene.getMeshByName(player.body.name), // `player.body.name` (named `playerBody`)
-    offsetMesh, // camOffset mesh
-    pawHitbox,
-  );
 }
-export function checkCameraCollision() {
-  if (!player.camera) return;
-  const scrollDelta = player.camera.radius - prevCameraRadius; // detects BabylonJS scroll changes each frame
-  if (player.firstPerson) { // Handle first person mode (if user scrolls/zooms all the way in)
-    if (scrollDelta > 0.01) { // if user scrolls out, exit first person
-      toggleCamView(player.firstPerson = false);
-      desiredCameraDistance = player.camera.radius;
-    }
-    prevCameraRadius = player.camera.radius;
-    return;
-  }
-  const colBuffer = 0.1, dir = player.camera.position.clone().subtract(player.camera.target).normalize();
-  if (scrollDelta > 0.01) { // scrolling out, only accept if no wall blocks the new radius
-    camRay.direction = dir; camRay.origin = player.camera.target; camRay.length = player.camera.radius;
-    const outHit = scene.pickWithRay(camRay, m => !camCollideIgnore.includes(m), false);
-    if (!outHit || !outHit.pickedPoint) {
-      desiredCameraDistance = player.camera.radius; // path clear, accept new distance
-      prevCameraRadius = player.camera.radius;
-      return;
-    }
-  } else if (scrollDelta < -0.01) { // scrolled in, enter first person if already at minimum
-    if (desiredCameraDistance <= gameSettings.defaultMinCamDist + colBuffer) {
-      toggleCamView(player.firstPerson = true);
-      prevCameraRadius = player.camera.radius;
-      return;
-    }
-    desiredCameraDistance = player.camera.radius;
-  }
-  // check for wall at desired distance, clamp immediately on hit or lerp back out when clear
-  camRay.direction = dir; camRay.origin = player.camera.target; camRay.length = desiredCameraDistance + colBuffer;
-  const hit = scene.pickWithRay(camRay, m => !camCollideIgnore.includes(m), false);
-  if (hit && hit.pickedPoint) {
-    player.camera.radius = Math.max(BABYLON.Vector3.Distance(player.camera.target, hit.pickedPoint) - colBuffer, 0.01);
-  } else {
-    player.camera.radius = BABYLON.Scalar.Lerp(player.camera.radius, desiredCameraDistance, 0.01);
-  }
-  prevCameraRadius = player.camera.radius;
-}
-/** @desc Registers a per-frame watcher on `targetMesh` that tracks which `_physics_collider` objects are currently intersecting it, updating `player.physicsObjectsTouching` and logging entries/exits */
+/** @desc Registers a per-frame watcher on `targetMesh` that tracks which `_physics_collider` objects are currently intersecting it, updating `player.physicsObjectsTouching` and logging entries/exits (USE SPARINGLY) */
 export function watchCollider(targetMesh) {
   scene.onBeforeRenderObservable.add(() => {
     const nowTouching = scene.meshes.filter(m => (m.name.includes("_physics_collider") || m.name.includes("_physics_sphCollider") || m.name.includes("_physics_cylCollider")) && targetMesh.intersectsMesh(m, false));
@@ -216,6 +182,7 @@ export function watchCollider(targetMesh) {
     }
   });
 }
+/** @desc Toggles between first person and third person camera views */
 function toggleCamView(firstPerson){
   if(firstPerson) player.camera.radius = 0;
   player.camera.minZ = firstPerson?0.3:0.01; // Adjust camera clipping distance in first person mode
@@ -242,6 +209,16 @@ export function copyPosScaleRotFromTo(fromMesh, toMesh){
   const worldMtx = fromMesh.getWorldMatrix();
   // Applies the relative world axis matrix to the scale/rotation/position
   return worldMtx.decompose(toMesh.scale, toMesh.rotationQuaternion, toMesh.position);
+}
+/** @desc Pins `player.camera` target to a `string` mesh name, `string` transform node name, or `[x,y,z]` array */
+export function pinCameraTo(meshOrName) {
+  if (meshOrName == null) { player.camera.setTarget(player.camOffset); return; } // Unknown arg? default to player.camOffset
+  if (Array.isArray(meshOrName)) { player.camera.setTarget(new BABYLON.Vector3(meshOrName[0], meshOrName[1], meshOrName[2])); return; }
+  if (typeof meshOrName === 'string') {
+    if (meshOrName === 'player') { player.camera.setTarget(player.camOffset); return; }
+    const target = scene.getMeshByName(meshOrName) ?? scene.getTransformNodeByName(meshOrName);
+    player.camera.setTarget(target ?? player.camOffset); // Attempt to find mesh/transform node, otherwise set to player.camOffset
+  } else { player.camera.setTarget(meshOrName); } // Attempt to set target directly to mesh object, if not a string or vec3 array
 }
 /** @desc Enables object occlusion culling (to hide meshes that are not currently visible on screen) */
 export function enableOcclusionOn(mesh){

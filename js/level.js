@@ -1,12 +1,10 @@
-import {player, scene} from "./globals.js";
+import {player, scene, gameSettings} from "./globals.js";
 import {
-  camCollideIgnore,
   copyPosScaleRotFromTo,
   loadMesh,
   meshCollisionCallback,
   teleportPlayer
 } from "./utils.js";
-import {collidersToRaycastOn} from "./movement.js";
 import * as utils from "./utils.js";
 import * as npc from "./npc.js";
 import * as animation from "./animation.js";
@@ -39,7 +37,7 @@ const assetList = {
     "levels/first_level.glb",
   ],
 };
-export let collectables = [], physicsObjectsTouching = [], totalCollectibles = 0;
+export let collectables = [], physicsObjectsTouching = [], totalCollectibles = 0, cameras = [];
 
 /** @desc Handles the setup and initialization of a given level mesh. Parses various mesh data and custom level colliders, as well as any lights or animations found */
 export function handleLevelModel(result) {
@@ -91,23 +89,22 @@ export function handleLevelModel(result) {
             colliderMesh = BABYLON.MeshBuilder.CreateBox(geoName, { width: bbWidth, height: bbHeight, depth: bbDepth }, scene);
             colliderMesh.position = localBB.centerWorld.clone();
             colliderMesh.rotationQuaternion = meshRot;
-            new BABYLON.PhysicsAggregate(colliderMesh, BABYLON.PhysicsShapeType.BOX, {mass: 0, friction: 0.5}, scene);
+            new BABYLON.PhysicsAggregate(colliderMesh, BABYLON.PhysicsShapeType.BOX, {mass: 0, friction: 0.3, restitution: 0}, scene);
           }else if(geoName.includes("_sphCollider")){
             const radius = Math.max(bbWidth, bbHeight, bbDepth) / 2;
             colliderMesh = BABYLON.MeshBuilder.CreateSphere(geoName, {diameter: radius * 2}, scene);
             colliderMesh.position = localBB.centerWorld.clone();
             colliderMesh.rotationQuaternion = meshRot;
-            new BABYLON.PhysicsAggregate(colliderMesh, BABYLON.PhysicsShapeType.SPHERE, {mass: 0, friction: 0.5}, scene);
+            new BABYLON.PhysicsAggregate(colliderMesh, BABYLON.PhysicsShapeType.SPHERE, {mass: 0, friction: 0.3, restitution: 0}, scene);
           }else if(geoName.includes("_cylCollider")){
             const radius = Math.max(bbWidth, bbDepth) / 2;
             colliderMesh = BABYLON.MeshBuilder.CreateCylinder(geoName, {height: bbHeight, diameter: radius * 2}, scene);
             colliderMesh.position = localBB.centerWorld.clone();
             colliderMesh.rotationQuaternion = meshRot;
-            new BABYLON.PhysicsAggregate(colliderMesh, BABYLON.PhysicsShapeType.CYLINDER, { mass: 0, friction: 0.5 }, scene);
+            new BABYLON.PhysicsAggregate(colliderMesh, BABYLON.PhysicsShapeType.CYLINDER, {mass: 0, friction: 0.3, restitution: 0}, scene);
           }
           colliderMesh.parent = collisionParent;
           colliderMesh.visibility = 0;
-          collidersToRaycastOn.push(colliderMesh);
           curGeo.dispose();
         } else { console.log("Unknown geometry: geoName = " + geoName); }
       }
@@ -120,16 +117,20 @@ export function handleLevelModel(result) {
     if (meshes.length === 1) {
       physicsBody = meshes[0];
     } else {
-      const merged = BABYLON.Mesh.MergeMeshes(meshes, false, true, undefined, false, false);
+      const srcMtx = meshes[0].getWorldMatrix().clone(); // all primitives in a group share the same world transform (same Blender origin)
+      const srcPos = new BABYLON.Vector3(), srcRot = new BABYLON.Quaternion(), srcScale = new BABYLON.Vector3();
+      srcMtx.decompose(srcScale, srcRot, srcPos);
+      const merged = BABYLON.Mesh.MergeMeshes(meshes, false, true, undefined, true, true); // multiMultiMaterials preserves all source materials so merged serves as both visual and physics body
       if (!merged) { console.warn(`[Physics] MergeMeshes failed for "${baseName}", skipping`); continue; }
-      const pivot = merged.getBoundingInfo().boundingBox.centerWorld.clone();
-      merged.bakeTransformIntoVertices(BABYLON.Matrix.Translation(-pivot.x, -pivot.y, -pivot.z));
-      merged.position = pivot;
+      merged.bakeTransformIntoVertices(srcMtx.clone().invert()); // convert world-space verts back to source local space, then restore source transform so Havok gets correct rotation/scale
+      merged.refreshBoundingInfo(); // recompute AABB after baking so frustum culling uses correct local bounds
+      merged.position = srcPos; merged.rotationQuaternion = srcRot; merged.scaling = srcScale;
+      merged.computeWorldMatrix(true);
       merged.name = baseName + "_physicsBody";
-      merged.isVisible = false;
-      meshes.forEach(m => m.setParent(merged));
+      meshes.forEach(m => m.dispose()); // sources baked into merged, dispose to avoid duplicate geometry and stale-BB flicker from setParent
       physicsBody = merged;
     }
+    utils.applyOutlineTo(physicsBody, gameSettings.defaultLineThickness);
 
     const hashIdx = baseName.indexOf('#');
     if (hashIdx !== -1) {
@@ -162,7 +163,8 @@ export function handleLevelModel(result) {
       new BABYLON.PhysicsAggregate(physicsBody, BABYLON.PhysicsShapeType.CONVEX_HULL, {mass, friction: 0.5}, scene);
       physicsBody.parent = physicsParent;
     }
-    collidersToRaycastOn.push(physicsBody);
+    // DEBUG: show convex hull source geometry as semi-transparent overlay so you can see what Havok builds its hull from
+    if (gameSettings.debugMode) { physicsBody.isVisible = true; physicsBody.visibility = 0.35; physicsBody.material = null; }
   }
   for(let data of result.transformNodes){
     // Load & parse other misc level mesh data (spawn points, lighting info, NPC node graphs, whatever else!)
@@ -178,6 +180,9 @@ export function handleLevelModel(result) {
         if(data.name.endsWith("_NPC")){
           const npcName = data.name.slice(0, -4); // Strip "_NPC" suffix to get the NPC's actual name
           npc.spawnNPC(npcName, data.absolutePosition.clone()); // async fire-and-forget
+        }else if(data.name.endsWith("_cam")){
+          cameras.push(data);
+          console.log(data.name, data);
         }
         break;
     }

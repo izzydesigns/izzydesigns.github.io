@@ -23,7 +23,7 @@ function getAnimationState() {
   }else if(!player.onGround){
     // TODO: Implement start/end frame specifications, and start anim half way through (falling)
     return animationData.jumpHigh;
-  }else if(player.movement.isJumpBtnDown && !player.movement.isMoving){
+  }else if(player.canJump && player.movement.isJumpBtnDown && !player.movement.isMoving){
     return animationData.jumpHighIdle;
   }else if(player.swatting && !player.movement.isMoving && !player.isAfk) {
     return animationData.attack;

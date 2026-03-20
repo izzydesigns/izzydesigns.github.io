@@ -1,0 +1,77 @@
+{
+  "start": "intro_1",
+  "nodes": {
+    "intro_1": {
+      "character": "Inner Voice",
+      "background": "transparent",
+      "cutsceneBars": true,
+      "text": "woah... am I actually a cat right now?? this is so cool :3",
+      "next": "cam_look"
+    },
+    "cam_look": {
+      "character": "Inner Voice",
+      "background": "transparent",
+      "text": "okay, let me look around a bit ^_^\n(Hint: move your mouse! try looking left, right, up and down!)",
+      "waitFor": "cam360",
+      "next": "cam_done"
+    },
+    "cam_done": {
+      "character": "Inner Voice",
+      "background": "transparent",
+      "text": "yep. yep yep. this is real. >:3",
+      "next": "wasd_move"
+    },
+    "wasd_move": {
+      "character": "Inner Voice",
+      "background": "transparent",
+      "enable": ["move"],
+      "text": "ooh, I wonder if I can actually walk around... let me try owo\n(Hint: press W, A, S, and D to move!)",
+      "waitFor": "wasd",
+      "next": "wasd_done"
+    },
+    "wasd_done": {
+      "character": "Inner Voice",
+      "background": "transparent",
+      "enable": ["move"],
+      "text": "there we go! look at these little legs :3",
+      "next": "sprint_walk_hint"
+    },
+    "sprint_walk_hint": {
+      "character": "Inner Voice",
+      "background": "transparent",
+      "enable": ["move"],
+      "text": "I need to figure out how to control my speed better, too...\n(Hint: Sprint by holding Shift, Walk by holding Alt!)",
+      "waitFor": "sprint_walk",
+      "next": "swat_hint"
+    },
+    "swat_hint": {
+      "character": "Inner Voice",
+      "background": "transparent",
+      "enable": ["move", "paw"],
+      "text": "Also... it would be REALLY COOL if I could swat my paw at things :0\n(Hint: hold Left Mouse to \"Swat\" your paw at objects!)",
+      "waitFor": "swat",
+      "next": "jump_try"
+    },
+    "jump_try": {
+      "character": "Inner Voice",
+      "background": "transparent",
+      "enable": ["move", "paw", "jump"],
+      "text": "NO WAY, THIS IS EPIC! I could literally jump with joy!!! ^_^\n(Hint: press Space to jump! Hold spacebar to charge up your jump!)",
+      "waitFor": "jump:5",
+      "next": "npc_search"
+    },
+    "npc_search": {
+      "character": "Inner Voice",
+      "background": "transparent",
+      "enable": ["move", "paw"],
+      "text": "I should see if anyone else is around now!",
+      "next": "npc_end"
+    },
+    "npc_end": {
+      "character": "Inner Voice",
+      "background": "transparent",
+      "enable": ["move", "paw"],
+      "text": "I should also explore this place... looks like there's lots of fun stuff to do :o"
+    }
+  }
+}

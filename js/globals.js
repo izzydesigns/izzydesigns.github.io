@@ -106,6 +106,8 @@ export const game = {
   animations: [], // Object reference for all loaded scene animations
   lights: [], // Object reference for all scene lights
   paused: false, // Has the game been paused/unfocused/minimized
+  pausedAt: 0, // Time when game was last paused (updated via `performance.now()`)
+  resumeDelay: 1200, // Delay before re-enabling "Resume" button on pause screen (to avoid browser cursorlock safety policy errors)
   playerSkins: {
     default: "./res/skins/placeholder.png",
     white: "./res/skins/placeholder3.png",
@@ -159,7 +161,7 @@ export const player = {
   name: "Player",
   model: undefined, mesh: undefined, body: undefined, camera: undefined, camOffset: undefined,
   impostorOptions: { // Player collider properties
-    mass: 3, friction: 1.0, restitution: 0.15
+    mass: 3, friction: 0.3, restitution: 0
   },
   boundingBox: new BABYLON.Vector3(0.175, 0.4, 0.45), // Default size of `player.body` (scaled by bodyScale)
   bodyScale: 2.5, // Player scale TODO: broken (only working using "magic numbers", and 2.5 is one of them)
@@ -174,14 +176,18 @@ export const player = {
   onGround: false, isSliding: false,
   cursorLocked: false, firstPerson: false,
   isAfk: false, lastMoveTime: 0, speed: 0,
-  surfaceTiltDeg: 0, surfaceNormal: undefined,
-  jumpDetectionBuffer: 0.2, // Small buffer for jump detection TODO: this is bad, "no magic numbers"!!!
+  surfaceTiltDeg: 0, surfaceNormal: new BABYLON.Vector3(0, 1, 0),
+  jumpDetectionBuffer: 0.5, // Small buffer for jump detection TODO: this is bad, "no magic numbers"!!!
   curSkin: game.playerSkins.default, curModel: game.playerModels.default,
   curAnimation: gameSettings.defaultIdleAnimation, isAnimTransitioning: false, lastAnimation: undefined,
   collectableCount: 0, allCollected: false,
   lastSwatTime: performance.now(), swatting: false,
-  swatStrength: 3,
+  swatStrength: 3, jumpCount: 0,
+  canJump: true, canPaw: true,
+  chargeJumpDelay: 1000, // ms to reach full charged jump height from standing still
+  jumpChargeStart: 0,   // timestamp (performance.now) when jump button was pressed
+  lastJumpVelocity: 0,  // Y velocity applied on last jump (used by dialog jump: condition)
   respawnPoint: new BABYLON.Vector3(0,0,0),
-  tutorialMode: false,
+  tutorialMode: true,
   curMode: "default", modes: ["default","zoomies","sneak"], // TODO: Implement me! :)
 };

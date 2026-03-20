@@ -46,7 +46,7 @@ export async function createNewScene() {
   scene.executeWhenReady(() => engine.hideLoadingUI());
   engine.runRenderLoop(() => scene.render());
   scene.onBeforeRenderObservable.add(renderLoop);
-  scene.onBeforePhysicsObservable.add(() => { player.onGround = false; }); // Reset before each physics step
+  scene.onBeforePhysicsObservable.add(() => { player.onGround = false; player.surfaceNormal = new BABYLON.Vector3(0, 1, 0); }); // Reset before each physics step; surfaceNormal rebuilt from collision contacts
 }
 /** @desc Render loop, run every single scene frame render (~240 times per sec) */
 export function renderLoop() {
@@ -59,7 +59,6 @@ export function renderLoop() {
     game.lastFrameTime = game.time - (deltaTime % game.frameRateLimit);
     gameLoop();
   }
-  utils.checkCameraCollision();
   animation.handleAnimations(); // Handles detection of animation state & plays appropriate animations
 }
 /** @desc Game loop, runs every 60 fps */
@@ -76,6 +75,7 @@ function gameLoop() {
 
 /** @desc Registers all scene input observables for keyboard and pointer events. Must be called after scene initialization */
 function initInputHandlers() {
+  let suppressNextJump = false;
   scene.onKeyboardObservable.add((kbInfo) => {
     const key = kbInfo.event;
     if (document.pointerLockElement) key.preventDefault(); // Prevents browser keys like tab and alt from triggering while ingame
@@ -90,14 +90,18 @@ function initInputHandlers() {
       if (key.code === input.right) player.movement.right = true;
       if (key.code === input.walk) player.movement.isWalking = true;
       if (key.code === input.sprint) player.movement.isSprinting = true;
-      if (key.code === input.jump) player.movement.isJumpBtnDown = true;
+      if (key.code === input.jump) { player.movement.isJumpBtnDown = true; player.jumpChargeStart = performance.now(); }
 
       // handle dialog/cutscene inputs
-      if (dialog.isDialogPlaying() && dialog.isInputEnabled() && game.curMenu === "cutscene") {
-        if (dialog.getDialogChoices().length > 0) { // Detected dialog options, get user input
-          // Loops through to see if "Digit1-9" was pressed, then passes that key number to dialog.handleQuestionNode
-          for (let i = 1; i < 10; i++) { if (key.code === "Digit"+i) { dialog.handleQuestionNode(i); } }
-        } else if (key.code === "Space") { dialog.proceedDialog(); } // Proceed dialog when space pressed
+      if (dialog.isDialogPlaying() && game.curMenu === "cutscene") {
+        if (key.code === "Space" && dialog.isTextPrinting()) {
+          if (!player.canJump) suppressNextJump = true;
+        } else if (dialog.isInputEnabled()) {
+          if (dialog.getDialogChoices().length > 0) {
+            // Loops through to see if "Digit1-9" was pressed, then passes that key number to dialog.handleQuestionNode
+            for (let i = 1; i < 10; i++) { if (key.code === "Digit"+i) { dialog.handleQuestionNode(i); } }
+          } else if (key.code === "Space") { dialog.proceedDialog(); suppressNextJump = true; } // Proceed dialog when space pressed
+        }
       }
 
       //TODO: Debug keys for testing, remove ALL of these later
@@ -126,8 +130,9 @@ function initInputHandlers() {
       if (key.code === input.left) {player.movement.left = false;}
       if (key.code === input.right) {player.movement.right = false;}
       if (key.code === input.jump && player.movement.isJumpBtnDown) {
-        player.movement.isJumping = true;
         player.movement.isJumpBtnDown = false;
+        if (suppressNextJump) { suppressNextJump = false; }
+        else { player.movement.isJumping = true; }
       }
       if (!player.movement.forward && !player.movement.back && !player.movement.left && !player.movement.right) {
         player.movement.isMoving = false;
@@ -139,9 +144,9 @@ function initInputHandlers() {
   scene.onPointerObservable.add((pointerInfo) => {
     switch (pointerInfo.type) {
       case BABYLON.PointerEventTypes.POINTERDOWN:
-        if (game.curMenu === "ingame") {
-          if (!dialog.isDialogPlaying()) canvas.requestPointerLock(); // Lock cursor on canvas click
-          if (player.cursorLocked) { // Swat mechanic
+        if (game.curMenu === "ingame" || game.curMenu === "cutscene") {
+          if (!player.cursorLocked) canvas.requestPointerLock();
+          if (player.cursorLocked && player.canPaw) { // Swat mechanic
             if (player.isAfk) player.isAfk = false;
             player.lastMoveTime = game.time;
             player.swatting = true;
@@ -161,10 +166,12 @@ function initInputHandlers() {
 document.addEventListener("pointerlockchange", () => {
   if(document.pointerLockElement !== canvas){
     game.curMenu = "pause"; player.cursorLocked = false;
+    game.pausedAt = performance.now(); // Tracks last pause time for re-enabling resume button after delay
   }else{
-    game.curMenu = "ingame"; player.cursorLocked = true;
+    // Don't override "cutscene" with "ingame" while dialog is actively playing
+    if(!dialog.isDialogPlaying()) game.curMenu = "ingame";
+    player.cursorLocked = true;
   }
-  if(gameSettings.debugMode)console.log("`pointerlockchange` Event triggered, pointer "+((game.curMenu === "ingame")?"":"no longer ")+"locked.");
 });
 // Handle document visibilitychange event (aka window minimize/restore, window is obscured, etc...)
 document.addEventListener('visibilitychange', () => {

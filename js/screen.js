@@ -8,6 +8,7 @@ export let currentMenu = "";
 
 /** @desc Initializes the `game.currentMenu` value to `gameSettings.defaultMenu` and various other screen elements like input element values */
 export function initScreenElements () {
+  let rotateInterval = null, resumeCooldownTimeout = null;
   // If adding translations/localizations, this would be the place to translate the game text
   game.curMenu = gameSettings.defaultMenu;
   showMenu(game.curMenu);
@@ -32,7 +33,7 @@ export function initScreenElements () {
   ui.pause_resumeBtn.click(async () => {
     utils.resumeScene();
     if(dialog.isDialogPlaying() && dialog.isDialogPaused())dialog.resumeDialog();
-    game.curMenu = (game.prevMenu === "customization" || game.prevMenu === "cutscene")?game.prevMenu:"ingame";updateMenus();
+    game.curMenu = dialog.isDialogPlaying() ? "cutscene" : (game.prevMenu === "customization" ? "customization" : "ingame"); updateMenus();
     canvas.requestPointerLock();
     canvas.focus();
     player.isAfk = false; player.lastMoveTime = performance.now();
@@ -66,11 +67,21 @@ export function initScreenElements () {
     player.jumpHeight = newJumpHeight;
   });
   // Customization menu input handlers
-  ui.customize_finishBtn.click(() => {
+  ui.customize_finishBtn.click(async () => {
     if(ui.customize_nameInput.val().length > 0){
-      // Sanitize player.name before assigning (only allows letters/numbers and - _ symbols)
       player.name = ui.customize_nameInput.val().replace(/[^a-zA-Z0-9_-]/g, '');
-      game.curMenu = "controls"; updateMenus();
+      player.isAfk = false; player.lastMoveTime = performance.now();
+      player.camera.radius = gameSettings.defaultCamDist;
+      game.curMenu = "ingame"; updateMenus();
+      canvas.focus(); // Necessary for BabylonJS keyboard listeners to receive input immediately without requiring click
+      await canvas.requestPointerLock();
+      teleportPlayer(player.respawnPoint);
+      scene.getMeshByName("camOffset").position.y += 0.1;
+      if (player.tutorialMode) { // Play tutorial if tutorialMode is true
+        await dialog.startDialog('./res/dialog/tutorial.json'); // Play tutorial sequence
+        player.tutorialMode = false; // Once completed, set tutorialMode to false (used later when loading player save data to prevent tutorial playing again)
+      }
+      game.curMenu = "ingame"; updateMenus();
     }else{ console.error("no player name specified, notify the user or something"); }
   });
   ui.controlsInfo_dismissBtn.click(async () => {
@@ -83,11 +94,6 @@ export function initScreenElements () {
     teleportPlayer(player.respawnPoint); // Tele player to level respawn point
     player.isAfk = false; player.lastMoveTime = performance.now();
   });
-  let rotateInterval = null;
-  const stopRotate = () => { clearInterval(rotateInterval); rotateInterval = null; };
-  ui.customize_rotateLeft.on('mousedown', () => { rotateInterval = setInterval(() => { player.camera.alpha -= 0.02; }, 16); });
-  ui.customize_rotateRight.on('mousedown', () => { rotateInterval = setInterval(() => { player.camera.alpha += 0.02; }, 16); });
-  $(document).on('mouseup', stopRotate);
   ui.customize_selectFur.on('change', function() {
     let selectedValue = $(this).val(), selectedText = $(this).find('option:selected').text();
     switch(selectedValue){
@@ -106,6 +112,15 @@ export function initScreenElements () {
         break;
     }
     applyPlayerTexture(player.model, player.curSkin);
+  });
+  ui.customize_rotateLeft.on('mousedown', () => { rotateInterval = setInterval(() => { player.camera.alpha -= 0.02; }, 16); });
+  ui.customize_rotateRight.on('mousedown', () => { rotateInterval = setInterval(() => { player.camera.alpha += 0.02; }, 16); });
+  $(document).on('mouseup', () => { clearInterval(rotateInterval); rotateInterval = null; }); // Stop rotating TODO: Handle me better? this ALWAYS triggers on ANY mouse up event on the entire document... only handle if the button element is pressed/unpressed, dont check the ENTIRE document for mouseup...
+  $(document).on('pointerlockchange', () => {
+    if(document.pointerLockElement !== canvas){
+      ui.pause_resumeBtn.prop('disabled', true);
+      resumeCooldownTimeout = setTimeout(() => ui.pause_resumeBtn.prop('disabled', false), game.resumeDelay);
+    } else { clearTimeout(resumeCooldownTimeout); ui.pause_resumeBtn.prop('disabled', false); }
   });
 }
 /** @desc Handles which menu to display when `currentMenu` value is changed */
@@ -138,8 +153,10 @@ function updateScreenElements (menu) {
       ui.hud5ValElem.text(game.currentFPS.toFixed(0));
       ui.hudCollectibles.text(player.collectableCount);
       ui.hudXValElem.text(curPos.x.toFixed(1)); ui.hudYValElem.text(curPos.y.toFixed(1)); ui.hudZValElem.text(curPos.z.toFixed(1));
-      let maxUIVelo = 10; // Arbitrary number to cap the UI speed progress bar to
-      ui.speedProgressBar.width((player.speed / maxUIVelo) * 100 + "%");
+      const jumpChargePct = (player.movement.isJumpBtnDown && !player.movement.isMoving)
+        ? Math.min((performance.now() - player.jumpChargeStart) / player.chargeJumpDelay, 1.0) * 100
+        : 0;
+      ui.speedProgressBar.width(jumpChargePct + "%");
       break;
     case "settings":
       ui.settings_walkInput.val(gameSettings.defaultMoveSpeed);
