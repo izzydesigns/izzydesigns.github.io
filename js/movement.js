@@ -78,8 +78,7 @@ export function handleMovement () {
 
   // Finalize movement data
   desiredRotation = BABYLON.Quaternion.FromEulerAngles(0, Math.atan2(-desiredMovement.x, -desiredMovement.z), 0); // Purely horizontal desiredMovement for initial desiredRotation
-  const applySlopeRotation = angleDeg > 1 && angleDeg <= 45;
-  if (applySlopeRotation) {
+  if(angleDeg > 1 && angleDeg < 45) {
     const surfaceRotation = BABYLON.Quaternion.FromLookDirectionLH(BABYLON.Vector3.Cross(vec.left, player.surfaceNormal),player.surfaceNormal);
     desiredRotation = surfaceRotation.multiply(desiredRotation.normalize()); // If on angled surface, add slope angle to desiredRotation
   }
@@ -95,6 +94,7 @@ export function handleMovement () {
   player.speed = player.body.physicsBody.getLinearVelocity().length();
 }
 
+/** @desc Havok collision callback registered on `player.body`. Sets `player.onGround` and `player.surfaceNormal` when a contact normal opposes the player's local up vector, indicating the bottom of the collider has hit a surface */
 export function checkOnGround(event) {
   if (event.type === BABYLON.PhysicsEventType.COLLISION_FINISHED) return;
   const playerUp = BABYLON.Vector3.TransformNormal(vec3(0,1,0), BABYLON.Matrix.FromQuaternionToRef(player.body.rotationQuaternion ?? BABYLON.Quaternion.Identity(), BABYLON.Matrix.Identity()));

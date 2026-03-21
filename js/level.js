@@ -110,6 +110,22 @@ export function handleLevelModel(result) {
       }
   }
   const hashGroups = new Map(); // groupId → { rootBody, container }
+  const massScalingVal = 10; // Value to multiply the physicsBody bounding box volume amount by, for dynamically calculating total object mass
+
+  // Pre-compute total mass for each compound group by summing OOBB volumes of all submeshes
+  const groupMasses = new Map();
+  for (const [baseName, meshes] of physicsGroups) {
+    const hashIdx = baseName.indexOf('#');
+    if (hashIdx === -1) continue;
+    const groupId = baseName.slice(hashIdx + 1);
+    for (const m of meshes) {
+      m.computeWorldMatrix(true);
+      const bb = m.getBoundingInfo().boundingBox;
+      const vol = (bb.maximumWorld.x - bb.minimumWorld.x) * (bb.maximumWorld.y - bb.minimumWorld.y) * (bb.maximumWorld.z - bb.minimumWorld.z);
+      groupMasses.set(groupId, (groupMasses.get(groupId) ?? 0) + vol * massScalingVal);
+    }
+  }
+  for (const [gId, mass] of groupMasses) { groupMasses.set(gId, Math.min(50, Math.max(0.1, mass))); }
 
   for (const [baseName, meshes] of physicsGroups) {
     meshes.forEach(m => { m.setParent(null); m.computeWorldMatrix(true); });
@@ -144,7 +160,7 @@ export function handleLevelModel(result) {
         const body = new BABYLON.PhysicsBody(physicsBody, BABYLON.PhysicsMotionType.DYNAMIC, false, scene);
         container.addChildFromParent(physicsBody, new BABYLON.PhysicsShapeConvexHull(physicsBody, scene), physicsBody);
         body.shape = container;
-        body.setMassProperties({ mass: 1, friction: 0.5, restitution: 0.15 });
+        body.setMassProperties({ mass: groupMasses.get(groupId), friction: 0.5, restitution: 0.15 });
         body.disablePreStep = false;
         hashGroups.set(groupId, { rootBody: physicsBody, container });
         physicsBody.parent = groupNode;
@@ -156,7 +172,6 @@ export function handleLevelModel(result) {
       }
     } else {
       const bb = physicsBody.getBoundingInfo().boundingBox;
-      const massScalingVal = 10; // Value to multiply the physicsBody bounding box volume amount by, for dynamically calculating total object mass
       const mass = Math.min(50, Math.max(0.1, // Lock mass value between 50 and 0.1
         (bb.maximumWorld.x - bb.minimumWorld.x) * (bb.maximumWorld.y - bb.minimumWorld.y) * (bb.maximumWorld.z - bb.minimumWorld.z) * massScalingVal
       ));
@@ -197,6 +212,7 @@ export function handleLevelModel(result) {
 /** @desc Shorthand for `await loadMesh()` and chooses `whichLevel` from `level.assetList.levels[]` */
 export async function loadLevel(whichLevel) { await loadMesh(assetDir, assetList.levels[whichLevel-1], undefined, true).then(handleLevelModel); }
 
+/** @desc Registers a collision callback on `itemMesh` so that when `player.body` intersects it, the collectable's parent `TransformNode` is disposed and `player.collectableCount` is incremented */
 function createCollectibleItem(itemMesh) {
   collectables.push(itemMesh); // push collectable mesh to array so `animation.js` can animate the items
   // The callback receives no parameters; we rely on `itemMesh` from the closure
@@ -206,7 +222,7 @@ function createCollectibleItem(itemMesh) {
       //groupNode.getChildren().forEach(child=>child.dispose()); // Dispose of all submeshes
       groupNode.dispose(); // Finally, dispose the empty TransformNode
       player.collectableCount++;
-      console.log(`Collectible obtained! ${player.collectableCount}/${totalCollectibles}`);
+      console.log("Collectible obtained! "+player.collectableCount+"/"+totalCollectibles);
     }
   });
 }

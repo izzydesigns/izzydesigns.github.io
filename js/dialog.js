@@ -40,24 +40,32 @@ const dialogState = {
   printing: false,
   instantPrint: false,
 };
+/** @desc Returns `true` if a dialog sequence is currently active */
 export function isDialogPlaying(){return dialogState.playing;}
+/** @desc Returns `true` if the active dialog has been paused */
 export function isDialogPaused(){return dialogState.paused;}
+/** @desc Returns `true` if the dialog system is currently awaiting player input (spacebar or choice key) */
 export function isInputEnabled(){return dialogState.inputEnabled;}
+/** @desc Returns the current array of dialog choice objects for the active question node */
 export function getDialogChoices(){return dialogState.choices;}
+/** @desc Pauses the active dialog, hides the cutscene bars, overlay, and condition prompt without ending the sequence */
 export function pauseDialog(){dialogState.paused = true;showCutsceneBars(false);dialogOverlay.hide();conditionPromptElem.hide();}
+/** @desc Resumes a paused dialog, restoring cutscene bars, the overlay, and the condition prompt if a `waitFor` condition is still active */
 export function resumeDialog() {dialogState.paused = false;showCutsceneBars(dialogState.cutsceneBars);game.curMenu = "cutscene";dialogOverlay.show();if(activeCondition)updateConditionPrompt();}
 let camTargetChanged = false, dialogPromise, couldMove, couldJump, couldPaw, conditionCleanup = null, conditionResolve = null, activeCondition = null, conditionState = {};
 let dialogJSON, dialogResolve = null, curDialogNode = '', dialogSpeed = 50/*ms per letter*/;
+/** @desc Returns `true` if dialog text is currently being printed character by character */
 export function isTextPrinting(){return dialogState.printing;}
+/** @desc Updates the on-screen condition progress indicator (`conditionPromptElem`) to reflect the current state of the active `waitFor` condition. Hides the prompt if no condition is active */
 function updateConditionPrompt() {
   if (!activeCondition || !dialogState.playing) { conditionPromptElem.hide(); return; }
-  const condState = conditionState;
+  const state = conditionState, ico = (bool) => bool?'✅':'⏳'; // Tiny function to return correct emoji according to boolean status
   let html = '';
-  if (activeCondition === 'cam360') { html = `Look around in all directions!<br>${condState.lookLeft?'✅':'⏳'} Left &nbsp; ${condState.lookRight?'✅':'⏳'} Right &nbsp; ${condState.lookUp?'✅':'⏳'} Up &nbsp; ${condState.lookDown?'✅':'⏳'} Down`; }
-  else if (activeCondition === 'wasd') { html = `Move around using the WASD keys!<br>${condState.KeyW?'✅':'⏳'} W &nbsp; ${condState.KeyA?'✅':'⏳'} A &nbsp; ${condState.KeyS?'✅':'⏳'} S &nbsp; ${condState.KeyD?'✅':'⏳'} D`; }
-  else if (activeCondition === 'sprint_walk') { html = `Sprint using Left Shift, Walk using Left Alt<br>${condState.hasSprinted?'✅':'⏳'} Sprint &nbsp; ${condState.hasWalked?'✅':'⏳'} Walk`; }
-  else if (activeCondition === 'swat') { html = `${condState.swiped?'✅':'⏳'} Hold Left Mouse button down to swat your paw!`; }
-  else if (activeCondition.startsWith('jump:')) { html = `${condState.jumped?'✅':'⏳'} Press spacebar to jump. Hold spacebar to jump higher!`; }
+  if (activeCondition === 'cam360') { html = "Look around in all directions!<br>"+ico(state.lookLeft)+" Left &nbsp; "+ico(state.lookRight)+" Right &nbsp; "+ico(state.lookUp)+" Up &nbsp; "+ico(state.lookDown)+" Down"; }
+  else if (activeCondition === 'wasd') { html = "Move around using the WASD keys!<br>"+ico(state.KeyW)+" W &nbsp; "+ico(state.KeyA)+" A &nbsp; "+ico(state.KeyS)+" S &nbsp; "+ico(state.KeyD)+" D"; }
+  else if (activeCondition === 'sprint_walk') { html = "Sprint using Left Shift, Walk using Left Alt<br>"+ico(state.hasSprinted)+" Sprint &nbsp; "+ico(state.hasWalked)+" Walk"; }
+  else if (activeCondition === 'swat') { html = ico(state.swiped)+" Hold Left Mouse button down to swat your paw!"; }
+  else if (activeCondition.startsWith('jump:')) { html = ico(state.jumped)+" Press spacebar to jump. Hold spacebar to jump higher!"; }
   conditionPromptElem.html(html).show();
 }
 
@@ -96,6 +104,7 @@ export async function handleQuestionNode(key){
   }
 }
 
+/** @desc Processes a single dialog node object, resets UI state, applies node properties (title, text, camera, cutsceneBars, enable, waitFor, choices), and awaits player input or condition resolution before returning */
 async function handleDialogNode(curNode) {
   if (!curNode) {console.error("No valid node detected, dialog interrupted!");endDialog();return;}
   /* Reset SOME on-screen elements each time a new dialog node is processed: */
@@ -127,7 +136,7 @@ async function handleDialogNode(curNode) {
   /* Handle "title"/"subtitle" sequences SEPARATELY */
   if (curNode.title !== undefined || curNode.subtitle !== undefined) {
     showTitlecard(curNode.title, curNode.subtitle, true);
-    await sleepInterruptible(curNode.delay?curNode.delay:3000); // 3s default delay, if no delay specified
+    await sleepCancellable(curNode.delay?curNode.delay:3000); // 3s default delay, if no delay specified
     if (dialogState.playing) await proceedDialog();
   }else{
     // Handle "character" node
@@ -155,6 +164,7 @@ async function handleDialogNode(curNode) {
   }
 }
 
+/** @desc Enables dialog input and populates the choices list with numbered options. If no `questions` array is provided, shows a "Press spacebar to continue" prompt instead */
 function getInput(questions){
   dialogState.inputEnabled = true; // Enable key inputs (utilized in `input.js`)
   if(questions){ // Asking user for dialog input
@@ -166,6 +176,7 @@ function getInput(questions){
     choicesElem.append("<li class='continue'>Press spacebar to continue...</li>");
   }
 }
+/** @desc Advances to the next dialog node specified by `curDialogNode.next`. Ends dialog if no next node exists */
 export async function proceedDialog() {
   if (!dialogState.playing) return;
   let nextDialogNode = dialogJSON.nodes[curDialogNode.next];
@@ -229,6 +240,7 @@ async function awaitCondition(condStr) {
     } else { console.warn('awaitCondition: "' + condStr + '" unknown, resolving...'); done(); } // If unknown condition, resolve
   });
 }
+/** @desc Fully terminates the active dialog sequence, cleans up observers, resets all dialog state, restores the player's pre-dialog movement/jump/paw abilities, hides UI elements, and resolves the promise returned by `startDialog()` */
 export function endDialog(){
   // Restore camera target if we changed it
   if (camTargetChanged && player.camera) { pinCameraTo(null); camTargetChanged = false; }
@@ -244,6 +256,7 @@ export function endDialog(){
   player.movement.canMove = couldMove; player.canJump = couldJump; player.canPaw = couldPaw;
 }
 
+/** @desc Prints `text` into `element` one character at a time at `dialogSpeed * speed` ms per character. Respects pause, instant-print (Space to skip), and dialog-end interruptions */
 async function printText(element, text, speed = 1.0) {
   if(!text || !element) return;
   dialogState.printing = true;
@@ -251,22 +264,24 @@ async function printText(element, text, speed = 1.0) {
   for (let i = 0; i < text.length; i++) {
     if (!dialogState.playing) break; // Exit immediately if dialog was force-ended
     if (dialogState.instantPrint) { element.html(text.replace(/\n/g, '<br>')); break; }
-    while (dialogState.paused) { await sleep(100); }
+    while (dialogState.paused) { await sleepRaw(100); }
     tempText += text[i] + ''; element.html(tempText.replace(/\n/g, '<br>'));
-    await sleep(speed * dialogSpeed / (player.movement.isJumpBtnDown ? 4 : 1));
+    await sleepRaw(speed * dialogSpeed / (player.movement.isJumpBtnDown ? 4 : 1));
   }
   dialogState.printing = false;
   dialogState.instantPrint = false;
 }
-async function sleep(ms) {return new Promise(resolve => setTimeout(resolve, ms));}
-/** @desc Like sleep(), but exits early if dialog is force-ended mid-wait */
-async function sleepInterruptible(ms) {
+/** @desc Returns a `Promise` that resolves after `ms` milliseconds, bare unconditional primitive, no dialog-state awareness */
+async function sleepRaw(ms) {return new Promise(resolve => setTimeout(resolve, ms));}
+/** @desc Like sleepRaw(), but polls every 50ms and exits early if dialog is force-ended mid-wait. Use this for long unguarded delays (e.g. titlecard holds) */
+async function sleepCancellable(ms) {
   const step = 50, end = performance.now() + ms;
-  while (dialogState.playing && performance.now() < end) { await sleep(Math.min(step, end - performance.now())); }
+  while (dialogState.playing && performance.now() < end) { await sleepRaw(Math.min(step, end - performance.now())); }
 }
 
 /** @desc Shows or hides the cinematic black bars at the very top and bottom of the screen during ingame dialog or cinematics */
 function showCutsceneBars (show=true) { if(show) { cutsceneBarElem.show(); } else { cutsceneBarElem.hide(); } }
+/** @desc Sets the titlecard overlay's title and subtitle text. `showBG` controls whether the overlay background is black (`true`) or transparent (`false`) */
 function showTitlecard (title, subtitle, showBG=true) {
   dialogOverlay.css("background",showBG?"black":"transparent");
   titleText.text(title);subtitleText.text(subtitle);

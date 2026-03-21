@@ -23,9 +23,11 @@ export function initPlayerCamera() {
   // Raycast-based camera zoom collision (hooked directly into Babylon's camera input cycle)
   const camRay = new BABYLON.Ray();
   let desiredCameraDistance = gameSettings.defaultCamDist; // player's intended zoom, preserved across wall hits
-  let prevCameraRadius = gameSettings.defaultCamDist;
+  let prevCameraRadius = gameSettings.defaultCamDist, isFirstPerson = false;
   player.camera.onAfterCheckInputsObservable.add(() => {
     if (Math.abs(player.camera.radius - prevCameraRadius) > 0.01) desiredCameraDistance = player.camera.radius;
+    const zoomedInFully = desiredCameraDistance <= player.camera.lowerRadiusLimit;
+    if (zoomedInFully !== isFirstPerson) { isFirstPerson = zoomedInFully; toggleCamView(isFirstPerson); }
     // Raycast from camera target (near player) outward toward the camera
     camRay.origin = player.camera.target.clone();
     camRay.direction = player.camera.position.subtract(player.camera.target).normalize();
@@ -130,7 +132,7 @@ export function handlePlayerModel(result) {
   player.body.physicsBody.disablePreStep = false; // Allow mesh transform to sync into Havok each prestep (enables direct position/rotation control)
   player.body.physicsBody.setAngularDamping(0);
   player.body.physicsBody.setCollisionCallbackEnabled(true);
-  player.body.physicsBody.getCollisionObservable().add(movement.checkOnGround);
+  player.body.physicsBody.getCollisionObservable().add(movement.checkOnGround); // Enable checkOnGround check within physocsBody collision events
   player.body.isVisible = gameSettings.debugMode; // Initialize player.body visibility based on initial `debugMode` status
   player.body.position = gameSettings.defaultSpawnPoint; // Teleports mesh to defaultSpawnPoint if the level being loaded does not specify a spawn point
   player.mesh.position.addInPlace(vec3(0,-0.49, 0));
@@ -149,7 +151,7 @@ export function handlePlayerModel(result) {
   boneTracker.attachToBone(pawBone, skinnedMesh); // Must pass skinnedMesh (not player.mesh) or scale/transform is applied incorrectly
   const pawHitbox = BABYLON.MeshBuilder.CreateBox("pawHitbox", {size:0.1}, scene);
   pawHitbox.isVisible = false; pawHitbox.isPickable = false;
-  //let swatHits = []; // Tracks meshes already hit to prevent applying impulse multiple times per swat (NOT ACTUALLY DESIRED BEHAVIOR! commented out)
+  //let swatHits = []; // Tracks meshes already hit to prevent applying impulse multiple times per swat (NOT ACTUALLY DESIRED BEHAVIOR! commented out for now, incase I want to make this a toggle later)
   scene.onBeforePhysicsObservable.add(() => {
     boneTracker.computeWorldMatrix(true); // Force world matrix update so position reflects current bone state before physics step
     pawHitbox.setAbsolutePosition(boneTracker.getAbsolutePosition());
@@ -233,5 +235,7 @@ export function enableOcclusionOn(mesh){
 export function vec3(x=0,y=0,z=0){return new BABYLON.Vector3(x,y,z);}
 /** @desc Returns a 360 degree value in relation to the angular difference between two vector directions */
 export function getVecDifInDegrees(vec1, vec2){ return BABYLON.Tools.ToDegrees(Math.acos(BABYLON.Vector3.Dot(vec1.normalize(), vec2.normalize()))) }
+/** @desc Converts a `BABYLON.Quaternion` to Euler angles, returning a `BABYLON.Vector3` */
 export function quatToEuler(quat){return quat.toEulerAngles();}
+/** @desc Converts a `BABYLON.Vector3` of Euler angles to a `BABYLON.Quaternion` */
 export function eulerToQuat(vector){return new BABYLON.Quaternion(vector.x,vector.y,vector.z,0);}

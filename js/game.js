@@ -116,7 +116,7 @@ function initInputHandlers() {
       }
       if (key.code === "KeyO") dialog.endDialog(); // Force ends any currently playing dialog TODO: BREAKS THINGS, NOT GRACEFULLY HANDLED
       if (key.code === input.interact) {
-        if (npc.currentlyLookingAtNPC) console.log(`Starting dialog with NPC named ${npc.currentlyLookingAtNPC.name}`);
+        if (npc.currentlyLookingAtNPC) console.log("Starting dialog with NPC named "+npc.currentlyLookingAtNPC.name);
       }
       if (key.code === gameSettings.controls.devMenu) {
         gameSettings.debugMode = !gameSettings.debugMode;

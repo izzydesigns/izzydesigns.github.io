@@ -177,7 +177,6 @@ export const player = {
   cursorLocked: false, firstPerson: false,
   isAfk: false, lastMoveTime: 0, speed: 0,
   surfaceTiltDeg: 0, surfaceNormal: new BABYLON.Vector3(0, 1, 0),
-  jumpDetectionBuffer: 0.5, // Small buffer for jump detection TODO: this is bad, "no magic numbers"!!!
   curSkin: game.playerSkins.default, curModel: game.playerModels.default,
   curAnimation: gameSettings.defaultIdleAnimation, isAnimTransitioning: false, lastAnimation: undefined,
   collectableCount: 0, allCollected: false,
