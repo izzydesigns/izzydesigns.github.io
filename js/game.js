@@ -46,7 +46,8 @@ export async function createNewScene() {
   scene.executeWhenReady(() => engine.hideLoadingUI());
   engine.runRenderLoop(() => scene.render());
   scene.onBeforeRenderObservable.add(renderLoop);
-  scene.onBeforePhysicsObservable.add(() => { player.onGround = false; player.surfaceNormal = new BABYLON.Vector3(0, 1, 0); }); // Reset before each physics step; surfaceNormal rebuilt from collision contacts
+  scene.onBeforePhysicsObservable.add(movement.resetGroundState); // Reset ground state before each physics step; see movement.js
+  scene.onAfterPhysicsObservable.add(movement.onGroundSnap); // Zero upward velocity while grounded to prevent Havok penetration correction bounce; see movement.js
 }
 /** @desc Render loop, run every single scene frame render (~240 times per sec) */
 export function renderLoop() {
@@ -64,10 +65,11 @@ export function renderLoop() {
 /** @desc Game loop, runs every 60 fps */
 function gameLoop() {
   if(player.body) movement.handleMovement(); // Handle player movement & rotation
+  utils.updateBiteHoverOutline(); // Highlight the nearest biteable object; white when actively bitten
   screen.updateMenus(); // Updates on-screen elements (such as in-game HUD elements & settings menu options)
   npc.handleNPCInteractions(); // Check player proximity & look direction against spawned NPCs
   if(player.collectableCount >= level.totalCollectibles && level.totalCollectibles > 0) {
-    // Do something once all collectables have been collected
+    // TODO: Do something once all collectables have been collected
     player.allCollected = true;
     console.log("You LITERALLY just collected every collectable ever... wowzers!!! ^_^");
   }
@@ -90,12 +92,17 @@ function initInputHandlers() {
       if (key.code === input.right) player.movement.right = true;
       if (key.code === input.walk) player.movement.isWalking = true;
       if (key.code === input.sprint) player.movement.isSprinting = true;
+      if (key.code === input.crouch && !player.movement.isCrouching && player.canCrouch) {
+        player.movement.isCrouching = true;
+        const bodyScale = player.bodyScale;
+        utils.applyBodyScale(utils.vec3(bodyScale, bodyScale * 0.6, bodyScale), false);
+      }
       if (key.code === input.jump) { player.movement.isJumpBtnDown = true; player.jumpChargeStart = performance.now(); }
 
       // handle dialog/cutscene inputs
       if (dialog.isDialogPlaying() && game.curMenu === "cutscene") {
         if (key.code === "Space" && dialog.isTextPrinting()) {
-          if (!player.canJump) suppressNextJump = true;
+          if (!dialog.getActiveCondition()?.startsWith('jump:')) suppressNextJump = true;
         } else if (dialog.isInputEnabled()) {
           if (dialog.getDialogChoices().length > 0) {
             // Loops through to see if "Digit1-9" was pressed, then passes that key number to dialog.handleQuestionNode
@@ -115,6 +122,8 @@ function initInputHandlers() {
         });
       }
       if (key.code === "KeyO") dialog.endDialog(); // Force ends any currently playing dialog TODO: BREAKS THINGS, NOT GRACEFULLY HANDLED
+      if (key.code === "KeyN") { console.log("applying bodyScale 1"); utils.applyBodyScale(utils.vec3(1, 1, 1)); }
+      if (key.code === "KeyM") { console.log("applying bodyScale 5"); utils.applyBodyScale(utils.vec3(5, 5, 5)); }
       if (key.code === input.interact) {
         if (npc.currentlyLookingAtNPC) console.log("Starting dialog with NPC named "+npc.currentlyLookingAtNPC.name);
       }
@@ -139,6 +148,11 @@ function initInputHandlers() {
       }
       if (key.code === input.walk) {player.movement.isWalking = false;}
       if (key.code === input.sprint && player.movement.isSprinting) {player.movement.isSprinting = false;}
+      if (key.code === input.crouch && player.movement.isCrouching) {
+        player.movement.isCrouching = false;
+        const bodyScale = player.bodyScale;
+        utils.applyBodyScale(utils.vec3(bodyScale, bodyScale, bodyScale), false);
+      }
     }
   });
   scene.onPointerObservable.add((pointerInfo) => {
@@ -146,15 +160,20 @@ function initInputHandlers() {
       case BABYLON.PointerEventTypes.POINTERDOWN:
         if (game.curMenu === "ingame" || game.curMenu === "cutscene") {
           if (!player.cursorLocked) canvas.requestPointerLock();
-          if (player.cursorLocked && player.canPaw) { // Swat mechanic
+          if (player.cursorLocked && pointerInfo.event.button === 0 && player.canPaw) { // Swat mechanic (left click)
             if (player.isAfk) player.isAfk = false;
             player.lastMoveTime = game.time;
             player.swatting = true;
           }
+          if (player.cursorLocked && pointerInfo.event.button === 2 && player.canBite) { // Biting mechanic (right click)
+            player.isBiting = true;
+            utils.startBite();
+          }
         }
         break;
       case BABYLON.PointerEventTypes.POINTERUP:
-        player.swatting = false;
+        if (pointerInfo.event.button === 0) player.swatting = false;
+        if (pointerInfo.event.button === 2 && player.isBiting) utils.releaseBite();
         break;
       case BABYLON.PointerEventTypes.POINTERWHEEL:
         lastScroll = game.time;

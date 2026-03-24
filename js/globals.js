@@ -126,7 +126,7 @@ export const gameSettings = {
   controls: {
     devMenu: "Tab",
     forward: "KeyW", left: "KeyA", back: "KeyS", right: "KeyD",
-    jump: "Space", sprint: "ShiftLeft", walk: "AltLeft",
+    jump: "Space", sprint: "ShiftLeft", walk: "AltLeft", crouch: "KeyC",
     interact: "KeyE",
   },
   menus: {
@@ -143,17 +143,22 @@ export const gameSettings = {
   defaultGravity: new BABYLON.Vector3(0, -9, 0), // Gravity value used when initializing game engine object
   defaultCamOffset: new BABYLON.Vector3(0,0.85,0),
   defaultCamDist: 3, defaultMinCamDist: 0.25, defaultMaxCamDist: 4,
-  defaultMoveAccel: 0.05, defaultMoveBlend: 0.2, // defaultMoveBlend = lerp factor for ground velocity blending
+  defaultMoveAccel: 0.05, defaultMoveBlend: 0.2, defaultInputLerpSpeed: 0.1, // defaultMoveBlend = lerp factor for ground velocity blending; defaultInputLerpSpeed = smooths direction changes (~0.5s for 180 at 60fps)
   defaultMaxSlopeAngle: 35, defaultSlopeAngle: 25,
-  defaultMoveSpeed: 3, defaultWalkSpeed: 1.5, defaultSprintSpeed: 5, // Default move, walk, and sprint speeds
+  defaultMoveSpeed: 3, defaultWalkSpeed: 2, defaultSprintSpeed: 5, // Default move, walk, and sprint speeds
   defaultJumpHeight: 3.5, defaultMinJumpHeight: 2,
   defaultJumpDelay: 0, // Delay before player can jump again (in seconds)
   defaultAfkDelay: 15000, // After 15 seconds, sleeping idle animation will play
   defaultIdleAnimation: animationData.idleStand, // Animation to initialize player model with
   defaultAnimBlendValue: 0.1, // Set to zero in order to disable animation blending & weights
+  defaultAnimChangeDelay: 50, // Minimum ms between animation changes to prevent rapid flickering between states
   defaultCollectableRotSpeed: 0.5, // How fast collectables rotate (how much y value incremented per frame, in radians I believe)
   defaultRotationSpeed: 0.08, // player.body rotation slerp value
-  defaultLineThickness: 0.005, // mesh.outline thickness
+  defaultBiteRadius: 1.5,        // Max world-unit distance from mouth anchor to latch onto a physics object
+  defaultBiteBreakDistance: 1.0, // Stretch distance (world units) at which the bite releases; spring naturally resists before this point
+  defaultBiteSpringStrength: 500, // Spring stiffness (N/m) pulling grab point toward mouth anchor
+  defaultBiteDamping: 16,        // Damping coefficient opposing target velocity, prevents oscillation
+  defaultLineThickness: 0.01, // mesh.outline thickness
   defaultAirControl: 0.15,
 };
 /** @desc This global variable contains all the relevant data for the player's object. This also contains the `player.body` and `player.mesh` variables, which are used in various places */
@@ -161,14 +166,14 @@ export const player = {
   name: "Player",
   model: undefined, mesh: undefined, body: undefined, camera: undefined, camOffset: undefined,
   impostorOptions: { // Player collider properties
-    mass: 3, friction: 0.3, restitution: 0
+    mass: 3, friction: 0.9, restitution: 0
   },
   boundingBox: new BABYLON.Vector3(0.175, 0.4, 0.45), // Default size of `player.body` (scaled by bodyScale)
-  bodyScale: 2.5, // Player scale TODO: broken (only working using "magic numbers", and 2.5 is one of them)
+  bodyScale: 2.5, // Player scale multiplier
   movement: {
     canMove: true, canSprint: true,
     isMoving: false, isJumpBtnDown: false, isJumping: false,
-    isWalking: false, isSprinting: false,
+    isWalking: false, isSprinting: false, isCrouching: false,
     forward: false, back: false, left: false, right: false,
   },
   jumpHeight: gameSettings.defaultJumpHeight,
@@ -182,7 +187,9 @@ export const player = {
   collectableCount: 0, allCollected: false,
   lastSwatTime: performance.now(), swatting: false,
   swatStrength: 3, jumpCount: 0,
-  canJump: true, canPaw: true,
+  canJump: true, canPaw: true, canCrouch: true, canBite: true,
+  isBiting: false, biteTarget: null, hoverTarget: null, mouthAnchor: null,
+  biteGrabPivotB: null, // Target-local grab pivot stored at bite time for stretch/break checks
   chargeJumpDelay: 1000, // ms to reach full charged jump height from standing still
   jumpChargeStart: 0,   // timestamp (performance.now) when jump button was pressed
   lastJumpVelocity: 0,  // Y velocity applied on last jump (used by dialog jump: condition)

@@ -2,6 +2,8 @@ import {canvas, engine, game, gameSettings, player, scene} from "./globals.js";
 import * as level from "./level.js";
 import * as movement from "./movement.js";
 
+let currentPhysicsScaleY = null; // Tracks the Y scale of the current physics shape independently of player.body.scaling.y (which doesn't change during crouch)
+
 /** @desc Vector shorthands (aka use `vec.up` for `BABYLON.Vector3.Up()`, `vec.down` for `BABYLON.Vector3.Down()`, and also added left right forward and backward vectors). */
 export const vec = {
   up: vec3(0,1,0),      down: vec3(0,-1,0),
@@ -20,21 +22,45 @@ export function initPlayerCamera() {
   player.camera.inertia = 0.1;
   player.camera.speed = 100;
   player.camera.fov = 1; // Default is 0.8 radians (~1/4th pi, somewhat small), so we increase it
+  player.camera.inputs.attached.pointers.useCtrlForPanning = false; // Prevent Ctrl key from switching camera to pan mode (allows ControlLeft as a keybind)
   // Raycast-based camera zoom collision (hooked directly into Babylon's camera input cycle)
   const camRay = new BABYLON.Ray();
   let desiredCameraDistance = gameSettings.defaultCamDist; // player's intended zoom, preserved across wall hits
   let prevCameraRadius = gameSettings.defaultCamDist, isFirstPerson = false;
   player.camera.onAfterCheckInputsObservable.add(() => {
+    if (isFirstPerson) {
+      if (player.camera.radius > 0.01) {
+        const minThirdPersonDist = 0.5;
+        isFirstPerson = false;
+        player.camera.lowerRadiusLimit = 0.01;
+        player.camera.inertialRadiusOffset = 0; // Clear inertia so it doesn't accidentally exit first person
+        desiredCameraDistance = minThirdPersonDist;
+        toggleCamView(false);
+        player.camera.radius = prevCameraRadius = minThirdPersonDist; // set camera.radius and prevCameraRadius to min third person cam distance
+      } else {
+        player.camera.radius = 0; // Pin at zero - lowerRadiusLimit is 0 in FP so Babylon won't clamp this back up
+        prevCameraRadius = 0;
+      }
+      return; // Stop here, so we don't run collisions or desiredCameraDistance updates while in first person
+    }
     if (Math.abs(player.camera.radius - prevCameraRadius) > 0.01) desiredCameraDistance = player.camera.radius;
-    const zoomedInFully = desiredCameraDistance <= player.camera.lowerRadiusLimit;
-    if (zoomedInFully !== isFirstPerson) { isFirstPerson = zoomedInFully; toggleCamView(isFirstPerson); }
-    // Raycast from camera target (near player) outward toward the camera
+    if (desiredCameraDistance < 0.5) {
+      isFirstPerson = true;
+      player.camera.lowerRadiusLimit = 0; // Must be 0 so Babylon doesn't clamp radius back to 0.01 every frame
+      player.camera.inertialRadiusOffset = 0; // Clear any residual scroll inertia - even small positive inertia would push radius above 0.01 and immediately exit FP next frame
+      desiredCameraDistance = 0;
+      toggleCamView(true);
+      prevCameraRadius = 0;
+      return;
+    }
+
+    // Raycast-based camera collision (third person only)
     camRay.origin = player.camera.target.clone();
     camRay.direction = player.camera.position.subtract(player.camera.target).normalize();
     camRay.length = desiredCameraDistance;
     // Only test visible level geometry, invisible colliders are filtered by isVisible, player mesh excluded explicitly
     const ignoreMeshes = [player.body, player.mesh, scene.getMeshByName("Player_geometry"), scene.getMeshByName("camOffset")];
-    const hit = scene.pickWithRay(camRay, m => m.isVisible && m.visibility > 0 && !ignoreMeshes.includes(m));
+    const hit = scene.pickWithRay(camRay, m => m.isVisible && m.visibility > 0 && !ignoreMeshes.includes(m) && !m.name.includes("_trigger"));
     if (hit?.pickedPoint) {
       player.camera.radius = Math.max(BABYLON.Vector3.Distance(player.camera.target, hit.pickedPoint) - 0.05, player.camera.lowerRadiusLimit);
     } else {
@@ -72,7 +98,7 @@ export function applyOutlineTo(meshName, width) {
   if (!mesh) return;
   mesh.renderOutline = true;
   mesh.outlineColor = new BABYLON.Color3(0, 0, 0);
-  mesh.outlineWidth = width?width:0.002; // custom width
+  mesh.outlineWidth = width?width:0.004; // custom width
 }
 
 // MESH HELPERS
@@ -116,7 +142,7 @@ export function meshCollisionCallback(collisionMesh, onEnterOrExit, detectMesh, 
 export function handlePlayerModel(result) {
   result.meshes[0].name = result.meshes[0].id = "playerMesh"; // Set player.mesh mesh name and id
   player.model = result; player.mesh = result.meshes[0]; // Initialize player.mesh with loaded mesh
-  player.mesh.scaling = vec3(player.bodyScale * 2, player.bodyScale * 2, player.bodyScale * 2); // Scales player model up x2 (originally tiny)
+  player.mesh.scaling = vec3(2, 2, 2); // Normalization factor only - player.body.scaling handles the actual bodyScale
   player.mesh.skeleton = result.skeletons[0]; // Init & store skeleton object
   player.mesh.skeleton.enableBlending(1); // Enable & set animation blending speed
 
@@ -124,35 +150,79 @@ export function handlePlayerModel(result) {
   applyPlayerTexture(result, game.playerSkins.default);
 
   // Create simple box collider for player model collision handling TODO: eventually adjust height for dif animations (aka crouching, isJumping, etc)
-  let playerBB = player.boundingBox.scaleInPlace(player.bodyScale), options = player.impostorOptions;
-  player.body = BABYLON.MeshBuilder.CreateBox("playerBody",{ width: playerBB.x, height: playerBB.y, depth: playerBB.z },scene);
+  const options = player.impostorOptions;
+  player.body = BABYLON.MeshBuilder.CreateBox("playerBody", { width: player.boundingBox.x, height: player.boundingBox.y, depth: player.boundingBox.z }, scene);
+  player.body.scaling = vec3(player.bodyScale, player.bodyScale, player.bodyScale); // Must be set BEFORE PhysicsAggregate so it reads the correct world bounding box
   new BABYLON.PhysicsAggregate(player.body, BABYLON.PhysicsShapeType.BOX, {mass:options.mass,friction:options.friction,restitution:options.restitution}, scene);
 
   // Set player body data
   player.body.physicsBody.disablePreStep = false; // Allow mesh transform to sync into Havok each prestep (enables direct position/rotation control)
   player.body.physicsBody.setAngularDamping(0);
   player.body.physicsBody.setCollisionCallbackEnabled(true);
-  player.body.physicsBody.getCollisionObservable().add(movement.checkOnGround); // Enable checkOnGround check within physocsBody collision events
+  player.body.physicsBody.getCollisionObservable().add(movement.checkOnGround); // Enable checkOnGround check within physicsBody collision events
   player.body.isVisible = gameSettings.debugMode; // Initialize player.body visibility based on initial `debugMode` status
   player.body.position = gameSettings.defaultSpawnPoint; // Teleports mesh to defaultSpawnPoint if the level being loaded does not specify a spawn point
-  player.mesh.position.addInPlace(vec3(0,-0.49, 0));
+  player.mesh.position = vec3(0, -(player.boundingBox.y / 2), 0);
   player.mesh.parent = player.body;
 
-  // Create a dummy cube to parent the camera to, which is then parented to the player mesh
-  const cameraOffset = player.mesh.position.clone().addInPlace(gameSettings.defaultCamOffset);
+  // Camera offset: 85% of collider height above the mesh root, keeping the target near the cat's back at any scale
+  const thirdPersonCamOffset = vec3(0, player.mesh.position.y + player.boundingBox.y * 0.85, 0);
+  player.thirdPersonCamOffset = thirdPersonCamOffset.clone();
   const offsetMesh = BABYLON.MeshBuilder.CreateBox("camOffset",{size:0.01},scene);
-  offsetMesh.isVisible = false; offsetMesh.parent = player.body; offsetMesh.position = cameraOffset;
-  player.camera.setTarget(offsetMesh); // Sets target to offsetMesh (parented to player.mesh)
+  offsetMesh.isVisible = false; offsetMesh.parent = player.body; offsetMesh.position = thirdPersonCamOffset;
+  player.camera.setTarget(offsetMesh);
   player.camOffset = offsetMesh;
+  // Bone positions are relative to the actual skinned child mesh, not the __root__ TransformNode
+  const skinnedMesh = player.mesh.getChildMeshes().find(m => m.skeleton) ?? player.mesh;
+  const neckBone = player.mesh.skeleton.bones.find(b => b.name === "neck_TopSHJnt"); // Camera targets this neck bone when in first-person, stays parented at any bodyScale & animation state
+  if (neckBone) {
+    const neckTracker = new BABYLON.TransformNode("neckBoneTracker", scene);
+    neckTracker.attachToBone(neckBone, skinnedMesh);
+    player.neckBoneTracker = neckTracker;
+  }
+
+  // Mouth anchor: small kinematic physics body used as the attachment point for bite constraints.
+  // Positioned each physics step to track the neck bone with a slight forward offset (like camOffset/pawHitbox).
+  const mouthAnchorMesh = BABYLON.MeshBuilder.CreateBox("mouthAnchor", { size: 0.01 }, scene);
+  mouthAnchorMesh.isVisible = false; mouthAnchorMesh.isPickable = false;
+  const mouthShape = new BABYLON.PhysicsShapeBox(BABYLON.Vector3.Zero(), BABYLON.Quaternion.Identity(), vec3(0.01, 0.01, 0.01), scene);
+  mouthShape.filterCollideMask = 0; // Mouth anchor must not physically collide with anything; it is a constraint anchor only
+  const mouthPhysicsBody = new BABYLON.PhysicsBody(mouthAnchorMesh, BABYLON.PhysicsMotionType.ANIMATED, false, scene);
+  mouthPhysicsBody.shape = mouthShape;
+  mouthPhysicsBody.setMassProperties({ mass: 0 });
+  mouthPhysicsBody.disablePreStep = false; // Sync kinematic body to mesh position each physics prestep
+  player.mouthAnchor = mouthAnchorMesh;
 
   const pawBone = player.mesh.skeleton.bones.find(b => b.name === "rt_leg_ToeSHJnt");
-  const skinnedMesh = player.mesh.getChildMeshes().find(m => m.skeleton) ?? player.mesh; // Bone positions are relative to the actual skinned child mesh, not the __root__ node
   const boneTracker = new BABYLON.TransformNode("boneTracker", scene); // Invisible tracker parented to bone lets BabylonJS resolve bone world position internally
   boneTracker.attachToBone(pawBone, skinnedMesh); // Must pass skinnedMesh (not player.mesh) or scale/transform is applied incorrectly
-  const pawHitbox = BABYLON.MeshBuilder.CreateBox("pawHitbox", {size:0.1}, scene);
+  const pawHitbox = BABYLON.MeshBuilder.CreateBox("pawHitbox", {size:0.04}, scene); // Base size at bodyScale=1; multiply by bodyScale for world size
   pawHitbox.isVisible = false; pawHitbox.isPickable = false;
+  pawHitbox.scaling = vec3(player.bodyScale, player.bodyScale, player.bodyScale);
+  player.pawHitbox = pawHitbox; // Stored so applyBodyScale can resize this alongside bodyScale
   //let swatHits = []; // Tracks meshes already hit to prevent applying impulse multiple times per swat (NOT ACTUALLY DESIRED BEHAVIOR! commented out for now, incase I want to make this a toggle later)
   scene.onBeforePhysicsObservable.add(() => {
+    // Sync mouth anchor to neck bone position with a slight forward offset each physics step
+    if (player.neckBoneTracker && player.mouthAnchor) {
+      player.neckBoneTracker.computeWorldMatrix(true);
+      const forward = player.body.getDirection(new BABYLON.Vector3(0, 0, -1)); // Cat model faces local -Z, so -Z is the true forward direction
+      const mouthForwardOffset = (player.boundingBox.z * player.bodyScale) / 4; // ~0.28 at default scale; scales with body size
+      player.mouthAnchor.setAbsolutePosition(player.neckBoneTracker.getAbsolutePosition().add(forward.scale(mouthForwardOffset)));
+    }
+    // Spring-damper bite: pull the grab point toward the mouth anchor each step instead of using a hard constraint
+    if (player.biteTarget && player.biteGrabPivotB) {
+      const grabWorld = BABYLON.Vector3.TransformCoordinates(player.biteGrabPivotB, player.biteTarget.getWorldMatrix());
+      const anchorWorld = player.mouthAnchor.getAbsolutePosition();
+      const delta = anchorWorld.subtract(grabWorld);
+      const stretch = delta.length();
+      if (stretch > gameSettings.defaultBiteBreakDistance) { releaseBite(); }
+      else {
+        const targetVel = player.biteTarget.physicsBody.getLinearVelocity();
+        const springForce = delta.scale(gameSettings.defaultBiteSpringStrength);
+        const dampingForce = targetVel.scale(-gameSettings.defaultBiteDamping);
+        player.biteTarget.physicsBody.applyForce(springForce.add(dampingForce), grabWorld);
+      }
+    }
     boneTracker.computeWorldMatrix(true); // Force world matrix update so position reflects current bone state before physics step
     pawHitbox.setAbsolutePosition(boneTracker.getAbsolutePosition());
     if(!player.swatting) /*swatHits = [];*/ return; // Reset hit list each time swat ends so next swat starts fresh
@@ -161,7 +231,8 @@ export function handlePlayerModel(result) {
       if(pawHitbox.intersectsMesh(mesh, false)){
         //swatHits.push(mesh.name); // Register hit before applying impulse to ensure it only fires once per mesh per swat
         const impulseDir = mesh.getAbsolutePosition().subtract(player.body.position).normalize();
-        mesh.physicsBody.applyImpulse(impulseDir.scale(player.swatStrength), mesh.getAbsolutePosition()); // scale(5) caps max impulse magnitude regardless of animation speed
+        const swatImpulseMultiplier = player.movement.isSprinting ? 2.0 : player.movement.isWalking ? 0.5 : 1.0;
+        mesh.physicsBody.applyImpulse(impulseDir.scale(player.swatStrength * swatImpulseMultiplier), mesh.getAbsolutePosition());
         console.log("Swat connected!", mesh.name);
       }
     });
@@ -184,11 +255,47 @@ export function watchCollider(targetMesh) {
     }
   });
 }
-/** @desc Toggles between first person and third person camera views */
-function toggleCamView(firstPerson){
-  if(firstPerson) player.camera.radius = 0;
-  player.camera.minZ = firstPerson?0.3:0.01; // Adjust camera clipping distance in first person mode
-  player.camOffset.position = player.mesh.position.clone().addInPlace(firstPerson?new BABYLON.Vector3(0, 0.75, -0.525):gameSettings.defaultCamOffset);
+/** @desc Toggles between first person and third person camera views. First person targets the neck_TopSHJnt bone tracker; third person targets the camOffset node. */
+function toggleCamView(firstPerson) {
+  player.firstPerson = firstPerson;
+  player.camera.minZ = firstPerson ? 0.3 : 0.01;
+  // Save angles before setTarget - rebuildAnglesAndRadius recomputes alpha/beta from camera world pos vs new target, which changes the look direction
+  const savedAlpha = player.camera.alpha, savedBeta = player.camera.beta;
+  if (firstPerson) {
+    if (player.neckBoneTracker) player.camera.setTarget(player.neckBoneTracker);
+    player.camera.radius = 0; // Must be AFTER setTarget - setTarget recomputes radius as distance to new target, overwriting any earlier assignment
+  } else {
+    player.camera.setTarget(player.camOffset);
+    if (player.thirdPersonCamOffset) player.camOffset.position = player.thirdPersonCamOffset.clone();
+  }
+  player.camera.alpha = savedAlpha; player.camera.beta = savedBeta; // Restore after setTarget so look direction is unchanged
+}
+/** @desc Updates player.bodyScale and re-applies scale to the mesh and physics collider at runtime. Swaps only the PhysicsShapeBox on the existing PhysicsBody so velocity, angular damping, and collision callbacks are all preserved. */
+export function applyBodyScale(scaleVec, scaleMesh = true) {
+  if (!player.body || !player.mesh || !player.boundingBox) return;
+  player.bodyScale = scaleVec.x; // X is always the uniform base; jump formula reads from here
+  const playerBB = player.boundingBox;
+  if (scaleMesh) { player.body.scaling = scaleVec; }
+  else {
+    // Keep collider bottom on floor, then reposition body so the new shape's bottom matches
+    const oldExtentsY = playerBB.y * (currentPhysicsScaleY ?? player.body.scaling.y);
+    const newExtentsY = playerBB.y * scaleVec.y;
+    const floorY = player.body.position.y - oldExtentsY / 2;
+    const newCenterY = floorY + newExtentsY / 2;
+    const yOffset = newCenterY - player.body.position.y;
+    player.body.position.y = newCenterY;
+    player.mesh.position.y -= yOffset / player.body.scaling.y; // Counteract in local space so mesh world Y stays unchanged
+  }
+  const physicsBody = player.body.physicsBody, oldShape = physicsBody.shape;
+  const newExtents = new BABYLON.Vector3(playerBB.x * scaleVec.x, playerBB.y * scaleVec.y, playerBB.z * scaleVec.z);
+  const opts = player.impostorOptions;
+  const newShape = new BABYLON.PhysicsShapeBox(BABYLON.Vector3.Zero(), BABYLON.Quaternion.Identity(), newExtents, scene);
+  newShape.material = { friction: opts.friction, restitution: opts.restitution };
+  physicsBody.shape = newShape;
+  if (oldShape) oldShape.dispose();
+  physicsBody.computeMassProperties();
+  if (scaleMesh && player.pawHitbox) player.pawHitbox.scaling = vec3(scaleVec.x, scaleVec.x, scaleVec.x); // pawHitbox stays uniform
+  currentPhysicsScaleY = scaleVec.y; // Always update so uncrouch knows the previous crouched Y scale
 }
 /** @desc Applies the specified texture to the specified result */
 export function applyPlayerTexture(result, url) {
@@ -221,6 +328,65 @@ export function pinCameraTo(meshOrName) {
     const target = scene.getMeshByName(meshOrName) ?? scene.getTransformNodeByName(meshOrName);
     player.camera.setTarget(target ?? player.camOffset); // Attempt to find mesh/transform node, otherwise set to player.camOffset
   } else { player.camera.setTarget(meshOrName); } // Attempt to set target directly to mesh object, if not a string or vec3 array
+}
+/** @desc Finds and returns the nearest biteable physics object within `gameSettings.defaultBiteRadius` of the mouth anchor, without latching. Returns null if none found. */
+export function findNearestBiteTarget() {
+  if (!player.mouthAnchor?.physicsBody) return null;
+  const mouthPos = player.mouthAnchor.getAbsolutePosition();
+  let nearestMesh = null, nearestDist = gameSettings.defaultBiteRadius;
+  scene.meshes.forEach(mesh => {
+    if (!mesh.physicsBody || mesh === player.body || mesh === player.mouthAnchor || mesh.name.includes("_trigger")) return;
+    const dist = BABYLON.Vector3.Distance(mouthPos, mesh.getAbsolutePosition());
+    if (dist < nearestDist) { nearestMesh = mesh; nearestDist = dist; return; }
+    // For large objects: if mouthAnchor is inside the world bounding box, treat as the closest candidate
+    const bb = mesh.getBoundingInfo().boundingBox;
+    if (mouthPos.x >= bb.minimumWorld.x && mouthPos.x <= bb.maximumWorld.x
+      && mouthPos.y >= bb.minimumWorld.y && mouthPos.y <= bb.maximumWorld.y
+      && mouthPos.z >= bb.minimumWorld.z && mouthPos.z <= bb.maximumWorld.z) {
+      nearestMesh = mesh; nearestDist = 0;
+    }
+  });
+  return nearestMesh;
+}
+/** @desc Applies outline width and color to a physics object mesh and all its outline-enabled children (handles compound objects). */
+function setPhysicsObjectOutline(rootMesh, width, color) {
+  [rootMesh, ...rootMesh.getChildMeshes()].forEach(m => {
+    if (!m.renderOutline) return;
+    m.outlineWidth = width; m.outlineColor = color;
+  });
+}
+/** @desc Per-frame: highlights the nearest valid bite target with 2x outline thickness, and switches its color to white while it is actively bitten. Resets outlines when the target changes or leaves range. */
+export function updateBiteHoverOutline() {
+  const activeTarget = player.biteTarget ?? findNearestBiteTarget();
+  if (player.hoverTarget && player.hoverTarget !== activeTarget) {
+    setPhysicsObjectOutline(player.hoverTarget, gameSettings.defaultLineThickness, new BABYLON.Color3(0, 0, 0));
+  }
+  player.hoverTarget = activeTarget;
+  if (!activeTarget) return;
+  const color = player.biteTarget === activeTarget ? BABYLON.Color3.White() : new BABYLON.Color3(0.533, 0.533, 0.533);
+  setPhysicsObjectOutline(activeTarget, gameSettings.defaultLineThickness * 2, color);
+}
+/** @desc Finds the nearest biteable physics object within `gameSettings.defaultBiteRadius` of the mouth anchor and attaches it via a ball-and-socket constraint. Grab pivot on the target is offset to its closest surface point toward the mouth to prevent center-clipping. */
+export function startBite() {
+  if (!player.mouthAnchor?.physicsBody || player.biteTarget) return;
+  const nearestMesh = findNearestBiteTarget();
+  if (!nearestMesh) return;
+  // Grab point: surface of target closest to the mouth anchor; if mouthAnchor is inside the bounding sphere, grab at mouth position directly to prevent instant break
+  const mouthPos = player.mouthAnchor.getAbsolutePosition();
+  const meshCenter = nearestMesh.getAbsolutePosition();
+  const dirToMouth = mouthPos.subtract(meshCenter).normalize();
+  const grabRadius = nearestMesh.getBoundingInfo().boundingSphere.radiusWorld;
+  const distToCenter = BABYLON.Vector3.Distance(mouthPos, meshCenter);
+  const grabPointWorld = distToCenter < grabRadius ? mouthPos.clone() : meshCenter.add(dirToMouth.scale(grabRadius));
+  const pivotOnTarget = BABYLON.Vector3.TransformCoordinates(grabPointWorld, BABYLON.Matrix.Invert(nearestMesh.getWorldMatrix()));
+  player.biteTarget = nearestMesh;
+  player.biteGrabPivotB = pivotOnTarget;
+}
+/** @desc Releases the current bite and resets all biting state. */
+export function releaseBite() {
+  player.biteTarget = null;
+  player.biteGrabPivotB = null;
+  player.isBiting = false;
 }
 /** @desc Enables object occlusion culling (to hide meshes that are not currently visible on screen) */
 export function enableOcclusionOn(mesh){

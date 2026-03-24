@@ -72,7 +72,7 @@ export function initScreenElements () {
       player.name = ui.customize_nameInput.val().replace(/[^a-zA-Z0-9_-]/g, '');
       player.isAfk = false; player.lastMoveTime = performance.now();
       player.camera.radius = gameSettings.defaultCamDist;
-      game.curMenu = "ingame"; updateMenus();
+      updateMenus();
       canvas.focus(); // Necessary for BabylonJS keyboard listeners to receive input immediately without requiring click
       await canvas.requestPointerLock();
       teleportPlayer(player.respawnPoint);

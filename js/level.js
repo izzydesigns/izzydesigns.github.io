@@ -46,7 +46,6 @@ export function handleLevelModel(result) {
   let triggerParent = new BABYLON.TransformNode("level triggers", scene); // Creates parent object for all triggers
   let collectablesParent = new BABYLON.TransformNode("level collectables", scene); // Creates parent object for all collectables
   let physicsParent = new BABYLON.TransformNode("level physics objects", scene); // Creates parent object for all physics objects
-  let collectableMeshes = [];
   const physicsGroups = new Map(); // Keyed by base name; each entry is an array of _primitive submeshes sharing one physics hull
   for(let curGeo of result.meshes){
     const geoName = curGeo.name;
@@ -62,7 +61,7 @@ export function handleLevelModel(result) {
           totalCollectibles++;
         }
         curGeo.outlineColor = new BABYLON.Color3(1,1,1); // set initial color before rainbow animation takes over
-        curGeo.outlineWidth = 0.02; // custom outline width
+        curGeo.outlineWidth = gameSettings.defaultLineThickness * 2;
         animation.animateCollectableColor(curGeo); // rainbow outline cycle
         curGeo.parent = groupNode; // Set subgeometry parent to groupNode transform node
         groupNode.parent = collectablesParent; // Set collectable groupNode parent to collectablesParent main node
@@ -76,10 +75,11 @@ export function handleLevelModel(result) {
         const bbWidth = (localBB.maximum.x - localBB.minimum.x) * meshScale.x;
         const bbHeight = (localBB.maximum.y - localBB.minimum.y) * meshScale.y;
         const bbDepth = (localBB.maximum.z - localBB.minimum.z) * meshScale.z;
+        const physicsOptions = {mass: 0, friction: 0.9, restitution: 0};
         if(geoName.includes("_trigger")){
           colliderMesh = BABYLON.MeshBuilder.CreateBox(geoName,{width:bbWidth,height:bbHeight,depth:bbDepth},scene);
           meshCollisionCallback(colliderMesh,"onEnter",player.mesh,()=>{});
-          colliderMesh.parent = triggerParent; colliderMesh.visibility = 0; curGeo.dispose(); camCollideIgnore.push(colliderMesh);
+          colliderMesh.parent = triggerParent; colliderMesh.visibility = 0; curGeo.dispose();
         }else if (geoName.includes("_physics")) {
           const baseName = geoName.replace(/_primitive\d+$/, "");
           if (!physicsGroups.has(baseName)) physicsGroups.set(baseName, []);
@@ -89,19 +89,19 @@ export function handleLevelModel(result) {
             colliderMesh = BABYLON.MeshBuilder.CreateBox(geoName, { width: bbWidth, height: bbHeight, depth: bbDepth }, scene);
             colliderMesh.position = localBB.centerWorld.clone();
             colliderMesh.rotationQuaternion = meshRot;
-            new BABYLON.PhysicsAggregate(colliderMesh, BABYLON.PhysicsShapeType.BOX, {mass: 0, friction: 0.3, restitution: 0}, scene);
+            new BABYLON.PhysicsAggregate(colliderMesh, BABYLON.PhysicsShapeType.BOX, physicsOptions, scene);
           }else if(geoName.includes("_sphCollider")){
             const radius = Math.max(bbWidth, bbHeight, bbDepth) / 2;
             colliderMesh = BABYLON.MeshBuilder.CreateSphere(geoName, {diameter: radius * 2}, scene);
             colliderMesh.position = localBB.centerWorld.clone();
             colliderMesh.rotationQuaternion = meshRot;
-            new BABYLON.PhysicsAggregate(colliderMesh, BABYLON.PhysicsShapeType.SPHERE, {mass: 0, friction: 0.3, restitution: 0}, scene);
+            new BABYLON.PhysicsAggregate(colliderMesh, BABYLON.PhysicsShapeType.SPHERE, physicsOptions, scene);
           }else if(geoName.includes("_cylCollider")){
             const radius = Math.max(bbWidth, bbDepth) / 2;
             colliderMesh = BABYLON.MeshBuilder.CreateCylinder(geoName, {height: bbHeight, diameter: radius * 2}, scene);
             colliderMesh.position = localBB.centerWorld.clone();
             colliderMesh.rotationQuaternion = meshRot;
-            new BABYLON.PhysicsAggregate(colliderMesh, BABYLON.PhysicsShapeType.CYLINDER, {mass: 0, friction: 0.3, restitution: 0}, scene);
+            new BABYLON.PhysicsAggregate(colliderMesh, BABYLON.PhysicsShapeType.CYLINDER, physicsOptions, scene);
           }
           colliderMesh.parent = collisionParent;
           colliderMesh.visibility = 0;
@@ -153,14 +153,13 @@ export function handleLevelModel(result) {
       const groupId = baseName.slice(hashIdx + 1);
       let groupNode = scene.getTransformNodeByName(groupId);
       if (!groupNode) { groupNode = new BABYLON.TransformNode(groupId, scene); groupNode.parent = physicsParent; }
-
       if (!hashGroups.has(groupId)) {
         // First mesh with this tag becomes the root compound body
         const container = new BABYLON.PhysicsShapeContainer(scene);
         const body = new BABYLON.PhysicsBody(physicsBody, BABYLON.PhysicsMotionType.DYNAMIC, false, scene);
         container.addChildFromParent(physicsBody, new BABYLON.PhysicsShapeConvexHull(physicsBody, scene), physicsBody);
         body.shape = container;
-        body.setMassProperties({ mass: groupMasses.get(groupId), friction: 0.5, restitution: 0.15 });
+        body.setMassProperties({ mass: groupMasses.get(groupId) });
         body.disablePreStep = false;
         hashGroups.set(groupId, { rootBody: physicsBody, container });
         physicsBody.parent = groupNode;
@@ -175,7 +174,7 @@ export function handleLevelModel(result) {
       const mass = Math.min(50, Math.max(0.1, // Lock mass value between 50 and 0.1
         (bb.maximumWorld.x - bb.minimumWorld.x) * (bb.maximumWorld.y - bb.minimumWorld.y) * (bb.maximumWorld.z - bb.minimumWorld.z) * massScalingVal
       ));
-      new BABYLON.PhysicsAggregate(physicsBody, BABYLON.PhysicsShapeType.CONVEX_HULL, {mass, friction: 0.5}, scene);
+      new BABYLON.PhysicsAggregate(physicsBody, BABYLON.PhysicsShapeType.CONVEX_HULL, {mass, friction: 0.9}, scene);
       physicsBody.parent = physicsParent;
     }
     // DEBUG: show convex hull source geometry as semi-transparent overlay so you can see what Havok builds its hull from

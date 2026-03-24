@@ -2,11 +2,19 @@ import {game, gameSettings, player, scene} from "./globals.js";
 import * as utils from "./utils.js";
 import {vec, vec3} from "./utils.js";
 
-let desiredRotation, desiredMovement = vec3(), lastJumpTime = 0, playerBodyMaterial = { friction: 0 };
+let desiredRotation, desiredMovement = vec3(), lastJumpTime = 0, prePhysVel = null, playerBodyMaterial = { friction: 0, restitution: 0 }, collidersToRaycastOn = [], groundRay;
 /** @desc Handles the player movement and applies forces to the `player.body` based on desired direction. Determines which direction and how strong the force is based on factors like `gameSettings.maxDefaultMoveSpeed */
 export function handleMovement () {
   // `player.onGround` - set by checkOnGround collision callback; `player.surfaceNormal` - set by checkOnGround from Havok contact normal
   if (!player.camera || !player.body || !player.body.position || !player.body.physicsBody || !player.body.physicsBody.getLinearVelocity()) return;
+  // Supplementary ground ray: stabilises onGround and surfaceNormal every render frame independently of per-step Havok collision events
+  if (!groundRay) groundRay = new BABYLON.PhysicsRaycastResult();
+  const capsuleBottom = player.body.position.subtract(new BABYLON.Vector3(0, player.boundingBox.y * player.bodyScale, 0));
+  scene.getPhysicsEngine().raycastToRef(capsuleBottom, capsuleBottom.subtract(new BABYLON.Vector3(0, player.boundingBox.y * player.bodyScale * 0.05, 0)), groundRay);
+  if (groundRay.hasHit && groundRay.body !== player.body.physicsBody) {
+    player.onGround = true;
+    player.surfaceNormal = groundRay.hitNormalWorld.clone();
+  }
   let newVelocity = player.body.physicsBody.getLinearVelocity().clone();
 
   // Slope detection (moved before jumping)
@@ -24,7 +32,10 @@ export function handleMovement () {
   }
 
   // Speed adjustments
-  if(player.movement.canSprint && player.movement.isSprinting && player.curMoveSpeed < gameSettings.defaultSprintSpeed) {
+  if(player.movement.isCrouching || (player.isBiting && player.biteTarget)) {
+    if(player.curMoveSpeed > gameSettings.defaultWalkSpeed) player.curMoveSpeed -= gameSettings.defaultMoveAccel;
+    if(player.curMoveSpeed < gameSettings.defaultWalkSpeed) player.curMoveSpeed += gameSettings.defaultMoveAccel;
+  }else if(player.movement.canSprint && player.movement.isSprinting && player.curMoveSpeed < gameSettings.defaultSprintSpeed) {
     player.curMoveSpeed += gameSettings.defaultMoveAccel;
   }else if(player.movement.isWalking && player.curMoveSpeed > gameSettings.defaultWalkSpeed) {
     player.curMoveSpeed -= gameSettings.defaultMoveAccel;
@@ -40,7 +51,13 @@ export function handleMovement () {
     const camFw = vec3(Math.sin(cameraRotation - Math.PI / 2), 0, Math.cos(cameraRotation - Math.PI / 2)).normalize();
     if (player.movement.forward && !player.movement.back) desiredMovement.addInPlace(camFw);
     if (player.movement.right && !player.movement.left) desiredMovement.addInPlace(camR);
-    if (player.movement.back && !player.movement.forward) desiredMovement.addInPlace(camFw.scale(-1)); // TODO: handle differently
+    if (player.movement.back && !player.movement.forward) {
+      if (player.isBiting && player.biteTarget) {
+        if (!player.movement.left && !player.movement.right) {
+          desiredMovement.addInPlace(player.body.getDirection(vec3(0, 0, 1)).normalize());
+        }
+      } else { desiredMovement.addInPlace(camFw.scale(-1)); }
+    }
     if (player.movement.left && !player.movement.right) desiredMovement.addInPlace(camR.scale(-1));
     if (desiredMovement.length() > 0) {
       player.isAfk = false; player.lastMoveTime = game.time;
@@ -66,18 +83,26 @@ export function handleMovement () {
       let jumpVelocity;
       if (!player.movement.isMoving) {
         const chargeFactor = Math.min((performance.now() - player.jumpChargeStart) / player.chargeJumpDelay, 1.0);
-        jumpVelocity = BABYLON.Scalar.Lerp(gameSettings.defaultMinJumpHeight, player.jumpHeight + (gameSettings.defaultSprintSpeed / 2), chargeFactor);
+        jumpVelocity = BABYLON.Scalar.Lerp(gameSettings.defaultMinJumpHeight, player.jumpHeight + (gameSettings.defaultSprintSpeed / 2), chargeFactor) * (1 + (player.bodyScale - 1) * 0.1);
       } else {
-        jumpVelocity = player.jumpHeight + (player.curMoveSpeed / 2);
+        jumpVelocity = (player.jumpHeight + (player.curMoveSpeed / 2)) * (1 + (player.bodyScale - 1) * 0.1);
       }
+      if(player.movement.isCrouching) jumpVelocity *= 0.8;
+      if(player.isBiting) jumpVelocity *= 0.5;
       player.lastJumpVelocity = jumpVelocity;
       newVelocity.y = player.surfaceNormal.normalize().scale(jumpVelocity).y;
     }
   }
   if(!player.onGround) playerBodyMaterial.friction = 0; // Also helps prevent player from getting stuck
 
+  // When biting and pulling back (S alone), lock horizontal facing to current body Y so the player doesn't spin
+  const bitePullingBack = player.isBiting && player.biteTarget && player.movement.back && !player.movement.left && !player.movement.right;
+  const horizontalAngle = bitePullingBack
+    ? (player.body.rotationQuaternion?.toEulerAngles().y ?? 0)
+    : Math.atan2(-desiredMovement.x, -desiredMovement.z);
+
   // Finalize movement data
-  desiredRotation = BABYLON.Quaternion.FromEulerAngles(0, Math.atan2(-desiredMovement.x, -desiredMovement.z), 0); // Purely horizontal desiredMovement for initial desiredRotation
+  desiredRotation = BABYLON.Quaternion.FromEulerAngles(0, horizontalAngle, 0);
   if(angleDeg > 1 && angleDeg < 45) {
     const surfaceRotation = BABYLON.Quaternion.FromLookDirectionLH(BABYLON.Vector3.Cross(vec.left, player.surfaceNormal),player.surfaceNormal);
     desiredRotation = surfaceRotation.multiply(desiredRotation.normalize()); // If on angled surface, add slope angle to desiredRotation
@@ -102,4 +127,21 @@ export function checkOnGround(event) {
     player.onGround = true; // Contact normal opposes player local up = bottom of collider hit something
     player.surfaceNormal = event.normal.scale(-1); // Flip: event.normal points into player, flip to get surface-up normal
   }
+}
+
+/** @desc Resets ground state before each physics step. Called via `onBeforePhysicsObservable` in game.js */
+export function resetGroundState() {
+  if(!player.body?.physicsBody) return;
+  player.onGround = false;
+  // surfaceNormal intentionally NOT reset: preserves last known value so slope tilt carries over when briefly airborne
+  prePhysVel = player.body.physicsBody.getLinearVelocity().clone() ?? null;
+}
+
+/** @desc Zeroes upward vertical velocity each physics step while grounded, preventing Havok penetration correction from launching the player. Called via `onAfterPhysicsObservable` in game.js */
+export function onGroundSnap() {
+  if (!player.body?.physicsBody || !player.onGround) return;
+  if (player.surfaceTiltDeg > 1) return; // On slopes, onGroundSnap would restore prePhysVel every frame, undoing gravity/friction deceleration: let physics handle it
+  const vel = player.body.physicsBody.getLinearVelocity();
+  if (vel.y < 0.05) return; // ignore tiny normal-force fluctuations
+  player.body.physicsBody.setLinearVelocity(new BABYLON.Vector3(prePhysVel?.x ?? vel.x, 0, prePhysVel?.z ?? vel.z));
 }

@@ -1,5 +1,7 @@
 import {player, scene, gameSettings, game, animationData} from "./globals.js";
 
+let lastAnimChangeTime = 0, lastMenuState = "";
+
 /** @desc Used to apply specific qualities to all/some animations (mainly used to assign default animation weight & blending status) */
 export function getSceneAnimations() {
   for (let animations of scene.animationGroups) game.animations.push(animations.name)
@@ -30,15 +32,30 @@ function getAnimationState() {
   }
   // Handle all onGround animations
   if(player.onGround) {
+    if(player.isBiting && player.biteTarget) {
+      if(player.movement.isMoving) {
+        const vel = player.body.physicsBody.getLinearVelocity();
+        const horizVel = new BABYLON.Vector3(vel.x, 0, vel.z);
+        if(horizVel.length() > 0.1) {
+          const toTarget = player.biteTarget.getAbsolutePosition().subtract(player.body.getAbsolutePosition()).normalize();
+          // Moving away from target = pulling; moving toward target = pushing
+          return BABYLON.Vector3.Dot(horizVel.normalize(), toTarget) < 0 ? animationData.pull : animationData.push;
+        }
+      }
+      return player.movement.isCrouching ? animationData.idleCrouch : animationData.idleStand;
+    }
+    if(player.movement.isCrouching) {
+      return player.movement.isMoving ? animationData.crawl : animationData.idleCrouch;
+    }
     if(player.speed > 0.01 && !player.movement.isMoving && player.curAnimation !== animationData.idleStand) {
       return animationData.walkToStand;
-    }else if(player.speed < (gameSettings.defaultMoveSpeed * 0.9) && player.speed > 0.01) {
+    }else if(player.speed < (gameSettings.defaultMoveSpeed * 0.75) && player.speed > 0.01) {
       if (gameSettings.debugMode) console.log("Player isWalking");
       return animationData.walk;
-    }else if(player.speed >= (gameSettings.defaultMoveSpeed * 0.9) && player.speed < (gameSettings.defaultMoveSpeed * 1.25)){
+    }else if(player.speed >= (gameSettings.defaultMoveSpeed * 0.75) && player.speed < (gameSettings.defaultSprintSpeed * 0.75)){
       if(gameSettings.debugMode) console.log("Player trotting");
       return animationData.trot;
-    }else if(player.speed >= (gameSettings.defaultMoveSpeed * 1.25)) {
+    }else if(player.speed >= (gameSettings.defaultSprintSpeed * 0.75)) {
       if (gameSettings.debugMode) console.log("Player sprinting");
       return animationData.gallop;
     }else if(player.speed <= 0.01) {
@@ -51,10 +68,22 @@ function getAnimationState() {
 }
 /** @desc Logic code run every frame to detect changes to the player animation state */
 export function handleAnimations() {
+  if (game.curMenu !== lastMenuState) { lastMenuState = game.curMenu; lastAnimChangeTime = 0; }
   const newState = getAnimationState();
-  if (!newState || newState === player.curAnimation) return;
+  // Dynamically update swat speed mid-playback when modifier keys change
+  if (player.curAnimation === animationData.attack) {
+    const attackAnim = scene.getAnimationGroupByName(animationData.attack[0]);
+    if (attackAnim?.isPlaying) {
+      attackAnim.speedRatio = player.movement.isSprinting ? 2.0 : player.movement.isWalking ? 0.5 : 1.0;
+    }
+  }
+  if (!newState || newState === player.curAnimation || game.time - lastAnimChangeTime < gameSettings.defaultAnimChangeDelay) return;
+  lastAnimChangeTime = game.time;
   stopAllAnimations();
-  playAnimation(newState);
+  const swatSpeedRatio = newState === animationData.attack
+    ? (player.movement.isSprinting ? 2.0 : player.movement.isWalking ? 0.5 : 1.0)
+    : 1.0;
+  playAnimation(newState, true, 0, undefined, swatSpeedRatio);
 }
 /** @desc Creates looping float and spin BabylonJS animations on a collectable TransformNode, applied once at spawn */
 export function animateCollectable(groupNode) {
@@ -84,7 +113,7 @@ export function animateCollectableColor(mesh) {
   scene.beginDirectAnimation(mesh, [colorAnim], 0, 360, true);
 }
 /** @desc Animation playing handler (allows looping, start, and stop time specification per animation) */
-export function playAnimation(newAnim, loop = true, startFrame = 0, endFrame = undefined) {
+export function playAnimation(newAnim, loop = true, startFrame = 0, endFrame = undefined, speedRatio = 1.0) {
   if(Array.isArray(newAnim) && newAnim[0] !== player.curAnimation[0]) {
     if (newAnim[1]) { // If there is a second animation in the newAnim array, handle appropriately
       // Retrieve newAnim[0] animation key from animationData object (if it exists)
@@ -95,7 +124,7 @@ export function playAnimation(newAnim, loop = true, startFrame = 0, endFrame = u
       stopAllAnimations(); // Stop all other animations
 
       // Play the original desired animation, then set isTransitioning to true until animation has completed.
-      transitionAnim.speedRatio = 1.0;
+      transitionAnim.speedRatio = speedRatio;
       transitionAnim.reset();transitionAnim.play(false);transitionAnim.setWeightForAllAnimatables(1);
       if(gameSettings.debugMode)console.log("playing transition anim: ", newAnim[0]," (on completion, play: ",newAnim[1],")");
       player.isAnimTransitioning = true;
@@ -111,11 +140,11 @@ export function playAnimation(newAnim, loop = true, startFrame = 0, endFrame = u
 
       return;
     }
-    if (scene.getAnimationGroupByName(newAnim[0])) {
-      const desiredPlayAnim = scene.getAnimationGroupByName(newAnim[0]);
+    const desiredPlayAnim = scene.getAnimationGroupByName(newAnim[0]);
+    if (desiredPlayAnim) {
       stopAllAnimations(); // Stop all other animations on the mesh before proceeding
       // Reset, start, and `weight=1` on our desiredPlayAnim
-      desiredPlayAnim.speedRatio = 1.0;
+      desiredPlayAnim.speedRatio = speedRatio;
       desiredPlayAnim.reset();
       desiredPlayAnim.start(loop, 1.0, startFrame, endFrame ?? desiredPlayAnim.to);
       desiredPlayAnim.setWeightForAllAnimatables(1);

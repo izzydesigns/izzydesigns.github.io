@@ -48,11 +48,14 @@ export function isDialogPaused(){return dialogState.paused;}
 export function isInputEnabled(){return dialogState.inputEnabled;}
 /** @desc Returns the current array of dialog choice objects for the active question node */
 export function getDialogChoices(){return dialogState.choices;}
+/** @desc Returns the current waitFor condition string, or null if none is active */
+export function getActiveCondition(){return activeCondition;}
 /** @desc Pauses the active dialog, hides the cutscene bars, overlay, and condition prompt without ending the sequence */
 export function pauseDialog(){dialogState.paused = true;showCutsceneBars(false);dialogOverlay.hide();conditionPromptElem.hide();}
 /** @desc Resumes a paused dialog, restoring cutscene bars, the overlay, and the condition prompt if a `waitFor` condition is still active */
 export function resumeDialog() {dialogState.paused = false;showCutsceneBars(dialogState.cutsceneBars);game.curMenu = "cutscene";dialogOverlay.show();if(activeCondition)updateConditionPrompt();}
-let camTargetChanged = false, dialogPromise, couldMove, couldJump, couldPaw, conditionCleanup = null, conditionResolve = null, activeCondition = null, conditionState = {};
+let camTargetChanged = false, dialogPromise, couldMove, couldJump, couldPaw, couldCrouch, couldBite, conditionCleanup = null, conditionResolve = null, activeCondition = null, conditionState = {};
+let persistEnabled = new Set(); // Abilities unlocked mid-dialog persist across all subsequent nodes
 let dialogJSON, dialogResolve = null, curDialogNode = '', dialogSpeed = 50/*ms per letter*/;
 /** @desc Returns `true` if dialog text is currently being printed character by character */
 export function isTextPrinting(){return dialogState.printing;}
@@ -65,6 +68,9 @@ function updateConditionPrompt() {
   else if (activeCondition === 'wasd') { html = "Move around using the WASD keys!<br>"+ico(state.KeyW)+" W &nbsp; "+ico(state.KeyA)+" A &nbsp; "+ico(state.KeyS)+" S &nbsp; "+ico(state.KeyD)+" D"; }
   else if (activeCondition === 'sprint_walk') { html = "Sprint using Left Shift, Walk using Left Alt<br>"+ico(state.hasSprinted)+" Sprint &nbsp; "+ico(state.hasWalked)+" Walk"; }
   else if (activeCondition === 'swat') { html = ico(state.swiped)+" Hold Left Mouse button down to swat your paw!"; }
+  else if (activeCondition === 'crouch') { html = ico(state.hasCrouched)+" Hold C to crouch!"; }
+  else if (activeCondition === 'swat_modifiers') { html = ico(state.hasFastSwatted)+" Shift+LMB: Faster swat &nbsp; "+ico(state.hasSlowSwatted)+" Alt+LMB: Slower swat"; }
+  else if (activeCondition === 'bite') { html = ico(state.hasBit)+" Hold Right Mouse to bite and pull!"; }
   else if (activeCondition.startsWith('jump:')) { html = ico(state.jumped)+" Press spacebar to jump. Hold spacebar to jump higher!"; }
   conditionPromptElem.html(html).show();
 }
@@ -80,8 +86,9 @@ export async function startDialog(path='./res/dialog/dialog.json', startNodeOver
     let startNodeName = startNodeOverride || dialogJSON.start || Object.keys(dialogJSON.nodes)[0];
     if(!startNodeName){console.error('No valid "start" node found in dialog JSON, cannot start dialog...');return Promise.resolve();}
     game.curMenu = "cutscene";
-    couldMove = player.movement.canMove; couldJump = player.canJump; couldPaw = player.canPaw;
-    player.movement.canMove = false; player.canJump = false; player.canPaw = false;
+    couldMove = player.movement.canMove; couldJump = player.canJump; couldPaw = player.canPaw; couldCrouch = player.canCrouch; couldBite = player.canBite;
+    player.movement.canMove = false; player.canJump = false; player.canPaw = false; player.canCrouch = false; player.canBite = false;
+    persistEnabled = new Set();
     curDialogNode = dialogJSON.nodes[startNodeName];
     dialogState.playing = true; dialogState.paused = false;
     dialogOverlay.show();
@@ -110,14 +117,15 @@ async function handleDialogNode(curNode) {
   /* Reset SOME on-screen elements each time a new dialog node is processed: */
   showTitlecard('', '', false); // Reset titlecard
   charText.text(''); conditionPromptElem.hide(); // Reset character text and condition prompt
-  // Reset all player abilities to disabled by default, then re-enable only what this node specifies
-  player.movement.canMove = false; player.canJump = false; player.canPaw = false;
-  if (curNode.enable !== undefined) {
-    for (const flag of curNode.enable) {
-      if(flag === "move") player.movement.canMove = true;
-      if(flag === "jump") player.canJump = true;
-      if(flag === "paw") player.canPaw  = true;
-    }
+  // Reset all player abilities, add this node's flags to the persistent set, then apply everything unlocked so far
+  player.movement.canMove = false; player.canJump = false; player.canPaw = false; player.canCrouch = false;
+  if (curNode.enable !== undefined) for (const flag of curNode.enable) persistEnabled.add(flag);
+  for (const flag of persistEnabled) {
+    if(flag === "move")   player.movement.canMove = true;
+    if(flag === "jump")   player.canJump = true;
+    if(flag === "paw")    player.canPaw = true;
+    if(flag === "crouch") player.canCrouch = true;
+    if(flag === "bite")   player.canBite = true;
   }
   // Handle "background" node (horizontal black bars for cinematic moments)
   if (curNode.background !== undefined) {dialogOverlay.css("background",curNode.background);}
@@ -193,7 +201,11 @@ async function awaitCondition(condStr) {
   return new Promise(resolve => { // Create promise that has conditions which must resolve before proceeding to next dialog node
     conditionResolve = resolve;
     const done = () => { if (dialogState.printing) dialogState.instantPrint = true; if (conditionCleanup) conditionCleanup(); activeCondition = null; conditionCleanup = null; conditionResolve = null; resolve(); };
-    if (condStr === 'swat') { // Continue dialog if player swats
+    if (condStr === 'crouch') { // Continue dialog once the player crouches
+      conditionState = { hasCrouched: false };
+      const observer = scene.onBeforeRenderObservable.add(() => { if(player.movement.isCrouching){ conditionState.hasCrouched = true; updateConditionPrompt(); done(); } });
+      conditionCleanup = () => scene.onBeforeRenderObservable.remove(observer);
+    } else if (condStr === 'swat') { // Continue dialog if player swats
       conditionState = { swiped: false };
       const observer = scene.onBeforeRenderObservable.add(() => { if(player.swatting){ conditionState.swiped = true; updateConditionPrompt(); done(); } });
       conditionCleanup = () => scene.onBeforeRenderObservable.remove(observer);
@@ -237,6 +249,22 @@ async function awaitCondition(condStr) {
         if (conditionState.lookLeft && conditionState.lookRight && conditionState.lookDown && conditionState.lookUp) { done(); }
       });
       conditionCleanup = () => player.camera.onAfterCheckInputsObservable.remove(observer);
+    } else if (condStr === 'swat_modifiers') {
+      conditionState = { hasFastSwatted: false, hasSlowSwatted: false };
+      const observer = scene.onBeforeRenderObservable.add(() => {
+        let changed = false;
+        if (player.swatting && player.movement.isSprinting && !conditionState.hasFastSwatted) { conditionState.hasFastSwatted = true; changed = true; }
+        if (player.swatting && player.movement.isWalking  && !conditionState.hasSlowSwatted)  { conditionState.hasSlowSwatted  = true; changed = true; }
+        if (changed) updateConditionPrompt();
+        if (conditionState.hasFastSwatted && conditionState.hasSlowSwatted) done();
+      });
+      conditionCleanup = () => scene.onBeforeRenderObservable.remove(observer);
+    } else if (condStr === 'bite') {
+      conditionState = { hasBit: false };
+      const observer = scene.onBeforeRenderObservable.add(() => {
+        if (player.isBiting) { conditionState.hasBit = true; updateConditionPrompt(); done(); }
+      });
+      conditionCleanup = () => scene.onBeforeRenderObservable.remove(observer);
     } else { console.warn('awaitCondition: "' + condStr + '" unknown, resolving...'); done(); } // If unknown condition, resolve
   });
 }
@@ -253,7 +281,7 @@ export function endDialog(){
   dialogText.text('');charText.text('');choicesElem.empty();conditionPromptElem.hide();
   if(dialogResolve){dialogResolve();dialogResolve = null;}
   dialogPromise = null;
-  player.movement.canMove = couldMove; player.canJump = couldJump; player.canPaw = couldPaw;
+  player.movement.canMove = couldMove; player.canJump = couldJump; player.canPaw = couldPaw; player.canCrouch = couldCrouch; player.canBite = couldBite;
 }
 
 /** @desc Prints `text` into `element` one character at a time at `dialogSpeed * speed` ms per character. Respects pause, instant-print (Space to skip), and dialog-end interruptions */
