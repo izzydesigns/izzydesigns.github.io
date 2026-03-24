@@ -14,7 +14,8 @@ let deltaTime;
 
 /** @desc Initializes the game's `engine` and `scene` variables. Dynamically imports and initializes the HavokPhysics WASM plugin, then enables physics using `gameSettings.defaultGravity` */
 export async function createNewScene() {
-  let tempEngine, webGPUSupported = !!navigator.gpu; // Check if navigator.gpu exists
+  const gpuAdapter = navigator.gpu ? await navigator.gpu.requestAdapter() : null;
+  let tempEngine, webGPUSupported = !!gpuAdapter; // Check if a real WebGPU adapter is available, not just the API
   if(webGPUSupported) {
     tempEngine = new BABYLON.WebGPUEngine(canvas, gameSettings.engineSettings);
   }else{ // Use WebGL as a fallback if WebGPU is not supported or enabled on user hardware
