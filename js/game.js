@@ -1,20 +1,17 @@
 import {player, scene, engine, canvas, gameSettings, game} from "./globals.js";
 import * as utils from "./utils.js";
-import * as dialog from "./dialog.js";
 import * as screen from "./screen.js";
-import * as level from "./level.js";
 import * as animation from "./animation.js";
 import * as globals from "./globals.js";
 import * as movement from "./movement.js";
 import * as npc from "./npc.js";
+import * as inputs from "./inputs.js";
 
-export let lastScroll = performance.now();
-const input = gameSettings.controls; // TODO: Fetch these from a `controls.cfg` file instead
 let deltaTime;
 
 /** @desc Initializes the game's `engine` and `scene` variables. Dynamically imports and initializes the HavokPhysics WASM plugin, then enables physics using `gameSettings.defaultGravity` */
 export async function createNewScene() {
-  const gpuAdapter = navigator.gpu ? await navigator.gpu.requestAdapter() : null;
+  const gpuAdapter = await navigator.gpu?.requestAdapter();
   let tempEngine, webGPUSupported = !!gpuAdapter; // Check if a real WebGPU adapter is available, not just the API
   if(webGPUSupported) {
     tempEngine = new BABYLON.WebGPUEngine(canvas, gameSettings.engineSettings);
@@ -39,16 +36,89 @@ export async function createNewScene() {
   // Do other scene setup stuff
   utils.initPlayerCamera(); // `player.camera` object initialization (must occur BEFORE loading/handling player mesh)
   scene.createDefaultLight(); // temporary scene lighting
+  scene.getOutlineRenderer().zOffset = 0.25; // Fix outline clipping at steep view angles
   utils.createSkybox("res/skybox/Sky_LosAngeles"); // Create a skybox
-  await utils.loadMesh("", player.curModel, "", true).then(utils.handlePlayerModel);
-  animation.getSceneAnimations();
-  initInputHandlers(); // Register scene input observables (must be called after setScene)
-  // Now hide loading screen and assign scene render function and game loop
-  scene.executeWhenReady(() => engine.hideLoadingUI());
-  engine.runRenderLoop(() => scene.render());
-  scene.onBeforeRenderObservable.add(renderLoop);
-  scene.onBeforePhysicsObservable.add(movement.resetGroundState); // Reset ground state before each physics step; see movement.js
-  scene.onAfterPhysicsObservable.add(movement.onGroundSnap); // Zero upward velocity while grounded to prevent Havok penetration correction bounce; see movement.js
+  await utils.loadMesh("", player.curModel, "", true).then((result) => {
+    utils.applyPlayerTexture(result, game.playerSkins.default); // Apply the default player texture (overrides mesh texture)
+    result.meshes[0].name = result.meshes[0].id = "playerMesh"; // Set player.mesh mesh name & id
+    player.model = result; player.mesh = result.meshes[0]; // Initialize player.mesh with loaded mesh
+    player.mesh.scaling = utils.vec3(2, 2, 2); // Normalize mesh scale to match scene object scale - player.body.scaling handles the actual bodyScale
+    player.mesh.skeleton = result.skeletons[0]; // Init & store skeleton object
+    player.mesh.skeleton.enableBlending(1); // Enable & set animation blending speed
+
+    // Create simple box collider for player model collision handling TODO: eventually adjust height for dif animations (aka crouching, isJumping, etc)
+    const options = player.impostorOptions;
+    player.body = BABYLON.MeshBuilder.CreateBox("playerBody", { width: player.boundingBox.x, height: player.boundingBox.y, depth: player.boundingBox.z }, scene);
+    player.body.scaling = utils.vec3(player.bodyScale, player.bodyScale, player.bodyScale); // Must be set BEFORE PhysicsAggregate so it reads the correct world bounding box
+    new BABYLON.PhysicsAggregate(player.body, BABYLON.PhysicsShapeType.BOX, {mass:options.mass,friction:options.friction,restitution:options.restitution}, scene);
+
+    // Set player body data
+    player.body.rotationQuaternion = BABYLON.Quaternion.Identity(); // Explicitly initialize so Slerp never operates on null
+    player.body.physicsBody.disablePreStep = false; // Allow mesh transform to sync into Havok each prestep (enables direct position/rotation control)
+    player.body.physicsBody.setAngularDamping(0);
+    player.body.physicsBody.setCollisionCallbackEnabled(true);
+    player.body.physicsBody.getCollisionObservable().add(movement.checkOnGround); // Enable checkOnGround check within physicsBody collision events
+    player.body.physicsBody.getCollisionObservable().add(movement.checkHeadCollision); // Enable checkHeadCollision check to force-crouch on head collisions
+    player.body.isVisible = gameSettings.debugMode; // Initialize player.body visibility based on initial debugMode status
+    player.body.position = gameSettings.defaultSpawnPoint; // Teleports mesh to defaultSpawnPoint if the level being loaded does not specify a spawn point
+    player.mesh.position = utils.vec3(0, -(player.boundingBox.y / 2), 0);
+    player.mesh.parent = player.body;
+
+    // Camera offset (85% of collider height, as specified in gameSettings.defaultCamOffset.y)
+    const thirdPersonCamOffset = utils.vec3(
+      gameSettings.defaultCamOffset.x,
+      player.mesh.position.y + (player.boundingBox.y * gameSettings.defaultCamOffset.y),
+      gameSettings.defaultCamOffset.z
+    );
+    player.thirdPersonCamOffset = thirdPersonCamOffset.clone();
+    const offsetMesh = BABYLON.MeshBuilder.CreateBox("camOffset", {size:0.01}, scene);
+    offsetMesh.isVisible = false; offsetMesh.parent = player.body; offsetMesh.position = thirdPersonCamOffset;
+    player.camera.setTarget(offsetMesh);
+    player.camOffset = offsetMesh;
+    // Bone positions are relative to the actual skinned child mesh, not the __root__ TransformNode
+    const skinnedMesh = player.mesh.getChildMeshes().find(m => m.skeleton) ?? player.mesh;
+    const neckBone = player.mesh.skeleton.bones.find(b => b.name === "neck_TopSHJnt"); // Camera targets this neck bone when in first-person, stays parented at any bodyScale & animation state
+    if (neckBone) {
+      const neckTracker = new BABYLON.TransformNode("neckBoneTracker", scene);
+      neckTracker.attachToBone(neckBone, skinnedMesh);
+      player.neckBoneTracker = neckTracker;
+    }
+    // Mouth anchor: attachment point for bite constraints
+    const mouthAnchorMesh = BABYLON.MeshBuilder.CreateBox("mouthAnchor", { size: 0.01 }, scene);
+    mouthAnchorMesh.isVisible = false; mouthAnchorMesh.isPickable = false;
+    const mouthShape = new BABYLON.PhysicsShapeBox(BABYLON.Vector3.Zero(), BABYLON.Quaternion.Identity(), utils.vec3(0.01, 0.01, 0.01), scene);
+    mouthShape.isTrigger = true; // Mouth anchor shouldn't collide with anything
+    const mouthPhysicsBody = new BABYLON.PhysicsBody(mouthAnchorMesh, BABYLON.PhysicsMotionType.ANIMATED, false, scene);
+    mouthPhysicsBody.shape = mouthShape;
+    mouthPhysicsBody.setCollisionCallbackEnabled(false);
+    mouthPhysicsBody.setMassProperties({ mass: 0 });
+    mouthPhysicsBody.disablePreStep = false; // Sync kinematic body to mesh position each physics prestep
+    mouthAnchorMesh.parent = player.body;
+    player.mouthAnchor = mouthAnchorMesh;
+
+    const pawBone = player.mesh.skeleton.bones.find(b => b.name === "rt_leg_ToeSHJnt");
+    const boneTracker = new BABYLON.TransformNode("pawBoneTracker", scene); // Invisible tracker parented to bone lets BabylonJS resolve bone world position internally
+    boneTracker.attachToBone(pawBone, skinnedMesh); // Must pass skinnedMesh (not player.mesh) or scale/transform is applied incorrectly
+    const pawHitbox = BABYLON.MeshBuilder.CreateBox("pawHitbox", {size:0.04}, scene); // Base size at bodyScale=1; multiply by bodyScale for world size
+    pawHitbox.isVisible = false; pawHitbox.isPickable = false;
+    pawHitbox.scaling = utils.vec3(player.bodyScale, player.bodyScale, player.bodyScale);
+    pawHitbox.parent = player.body;
+    player.pawHitbox = pawHitbox; // Stored so applyBodyScale can resize this alongside bodyScale
+  });
+  animation.getSceneAnimations(); animation.handleAnimations();
+  inputs.initInputHandlers(); // Register scene input observables (must be called after setScene)
+  // Wait for scene to be fully ready before starting render loop and registering observers
+  scene.executeWhenReady(() => {
+    engine.hideLoadingUI();
+    engine.stopRenderLoop(); // Guard: prevent double-registration if resumeScene ran before scene finished loading
+    engine.runRenderLoop(() => scene.render());
+    scene.onBeforeRenderObservable.add(renderLoop);
+    scene.onBeforePhysicsObservable.add(movement.resetGroundState);
+    scene.onBeforePhysicsObservable.add(movement.tryAutoUncrouch);
+    scene.onAfterPhysicsObservable.add(movement.onGroundSnap);
+    scene.onBeforePhysicsObservable.add(utils.handleBiting);
+    scene.onBeforePhysicsObservable.add(utils.handleSwatting);
+  });
 }
 /** @desc Render loop, run every single scene frame render (~240 times per sec) */
 export function renderLoop() {
@@ -66,149 +136,12 @@ export function renderLoop() {
 /** @desc Game loop, runs every 60 fps */
 function gameLoop() {
   if(player.body) movement.handleMovement(); // Handle player movement & rotation
+  if(player.camOffset && player.thirdPersonCamOffset) player.camOffset.position.y = BABYLON.Scalar.Lerp(player.camOffset.position.y, player.thirdPersonCamOffset.y, 0.12); // Smooth camera height transition on crouch/uncrouch
   utils.updateBiteHoverOutline(); // Highlight the nearest biteable object; white when actively bitten
   screen.updateMenus(); // Updates on-screen elements (such as in-game HUD elements & settings menu options)
   npc.handleNPCInteractions(); // Check player proximity & look direction against spawned NPCs
-  if(player.collectableCount >= level.totalCollectibles && level.totalCollectibles > 0) {
-    // TODO: Do something once all collectables have been collected
-    player.allCollected = true;
-    console.log("You LITERALLY just collected every collectable ever... wowzers!!! ^_^");
-  }
 }
 
-/** @desc Registers all scene input observables for keyboard and pointer events. Must be called after scene initialization */
-function initInputHandlers() {
-  let suppressNextJump = false;
-  scene.onKeyboardObservable.add((kbInfo) => {
-    const key = kbInfo.event;
-    if (document.pointerLockElement) key.preventDefault(); // Prevents browser keys like tab and alt from triggering while ingame
-    if (key.repeat) return; // Don't allow repeat keypress via holding key down
-    if (kbInfo.type === BABYLON.KeyboardEventTypes.KEYDOWN) {
-      if (key.code === input.forward || key.code === input.back || key.code === input.left || key.code === input.right) {
-        player.movement.isMoving = true; // Sets isMoving to true if player is pressing ANY directional keys
-      }
-      if (key.code === input.forward) player.movement.forward = true;
-      if (key.code === input.back) player.movement.back = true;
-      if (key.code === input.left) player.movement.left = true;
-      if (key.code === input.right) player.movement.right = true;
-      if (key.code === input.walk) player.movement.isWalking = true;
-      if (key.code === input.sprint) player.movement.isSprinting = true;
-      if (key.code === input.crouch && !player.movement.isCrouching && player.canCrouch) {
-        player.movement.isCrouching = true;
-        const bodyScale = player.bodyScale;
-        utils.applyBodyScale(utils.vec3(bodyScale, bodyScale * 0.6, bodyScale), false);
-      }
-      if (key.code === input.jump) { player.movement.isJumpBtnDown = true; player.jumpChargeStart = performance.now(); }
-
-      // handle dialog/cutscene inputs
-      if (dialog.isDialogPlaying() && game.curMenu === "cutscene") {
-        if (key.code === "Space" && dialog.isTextPrinting()) {
-          if (!dialog.getActiveCondition()?.startsWith('jump:')) suppressNextJump = true;
-        } else if (dialog.isInputEnabled()) {
-          if (dialog.getDialogChoices().length > 0) {
-            // Loops through to see if "Digit1-9" was pressed, then passes that key number to dialog.handleQuestionNode
-            for (let i = 1; i < 10; i++) { if (key.code === "Digit"+i) { dialog.handleQuestionNode(i); } }
-          } else if (key.code === "Space") { dialog.proceedDialog(); suppressNextJump = true; } // Proceed dialog when space pressed
-        }
-      }
-
-      //TODO: Debug keys for testing, remove ALL of these later
-      if (key.code === "NumpadAdd") {utils.teleportPlayer(utils.vec3(8.5, 2, 6));}
-      if (key.code === "NumpadSubtract") {utils.teleportPlayer(utils.vec3(0, 2, 0));}
-      if (key.code === "KeyP") {
-        // Begin example intro cutscene/dialog sequence
-        dialog.startDialog('./res/dialog/example_intro.json').then(function () {
-          console.log("this shows AFTER cutscene has ended, either by completion OR interruption");
-          utils.teleportPlayer(utils.vec3(0, 10, 0));
-        });
-      }
-      if (key.code === "KeyO") dialog.endDialog(); // Force ends any currently playing dialog TODO: BREAKS THINGS, NOT GRACEFULLY HANDLED
-      if (key.code === "KeyN") { console.log("applying bodyScale 1"); utils.applyBodyScale(utils.vec3(1, 1, 1)); }
-      if (key.code === "KeyM") { console.log("applying bodyScale 5"); utils.applyBodyScale(utils.vec3(5, 5, 5)); }
-      if (key.code === input.interact) {
-        if (npc.currentlyLookingAtNPC) console.log("Starting dialog with NPC named "+npc.currentlyLookingAtNPC.name);
-      }
-      if (key.code === gameSettings.controls.devMenu) {
-        gameSettings.debugMode = !gameSettings.debugMode;
-        console.log("Toggling debugMode ", gameSettings.debugMode);
-        player.body.isVisible = gameSettings.debugMode;
-      }
-    }
-    if (kbInfo.type === BABYLON.KeyboardEventTypes.KEYUP) {
-      if (key.code === input.forward) {player.movement.forward = false;}
-      if (key.code === input.back) {player.movement.back = false;}
-      if (key.code === input.left) {player.movement.left = false;}
-      if (key.code === input.right) {player.movement.right = false;}
-      if (key.code === input.jump && player.movement.isJumpBtnDown) {
-        player.movement.isJumpBtnDown = false;
-        if (suppressNextJump) { suppressNextJump = false; }
-        else { player.movement.isJumping = true; }
-      }
-      if (!player.movement.forward && !player.movement.back && !player.movement.left && !player.movement.right) {
-        player.movement.isMoving = false;
-      }
-      if (key.code === input.walk) {player.movement.isWalking = false;}
-      if (key.code === input.sprint && player.movement.isSprinting) {player.movement.isSprinting = false;}
-      if (key.code === input.crouch && player.movement.isCrouching) {
-        player.movement.isCrouching = false;
-        const bodyScale = player.bodyScale;
-        utils.applyBodyScale(utils.vec3(bodyScale, bodyScale, bodyScale), false);
-      }
-    }
-  });
-  scene.onPointerObservable.add((pointerInfo) => {
-    switch (pointerInfo.type) {
-      case BABYLON.PointerEventTypes.POINTERDOWN:
-        if (game.curMenu === "ingame" || game.curMenu === "cutscene") {
-          if (!player.cursorLocked) canvas.requestPointerLock();
-          if (player.cursorLocked && pointerInfo.event.button === 0 && player.canPaw) { // Swat mechanic (left click)
-            if (player.isAfk) player.isAfk = false;
-            player.lastMoveTime = game.time;
-            player.swatting = true;
-          }
-          if (player.cursorLocked && pointerInfo.event.button === 2 && player.canBite) { // Biting mechanic (right click)
-            player.isBiting = true;
-            utils.startBite();
-          }
-        }
-        break;
-      case BABYLON.PointerEventTypes.POINTERUP:
-        if (pointerInfo.event.button === 0) player.swatting = false;
-        if (pointerInfo.event.button === 2 && player.isBiting) utils.releaseBite();
-        break;
-      case BABYLON.PointerEventTypes.POINTERWHEEL:
-        lastScroll = game.time;
-        break;
-    }
-  });
-}
-// Handle pointerlockchange event (aka user presses escape/alt+tab to exit `pointer lock` mode)
-document.addEventListener("pointerlockchange", () => {
-  if(document.pointerLockElement !== canvas){
-    game.curMenu = "pause"; player.cursorLocked = false;
-    game.pausedAt = performance.now(); // Tracks last pause time for re-enabling resume button after delay
-  }else{
-    // Don't override "cutscene" with "ingame" while dialog is actively playing
-    if(!dialog.isDialogPlaying()) game.curMenu = "ingame";
-    player.cursorLocked = true;
-  }
-});
-// Handle document visibilitychange event (aka window minimize/restore, window is obscured, etc...)
-document.addEventListener('visibilitychange', () => {
-  if(document.hidden && !game.paused){
-    game.paused = true;
-    utils.pauseScene();
-    if(gameSettings.debugMode)console.log("Document visibility hidden, pausing scene...");
-  }else if(game.curMenu === "ingame"){
-    game.paused = false;
-    utils.resumeScene();
-    if(gameSettings.debugMode)console.log("Document visibile again, resuming scene...");
-  }
-});
-// Prevent right click context menu
-document.addEventListener('contextmenu', (event) => {event.preventDefault()});
-// Handle window resizing
-window.addEventListener("resize", () => {if(engine)engine.resize()});
 // After initializing event window handlers, initialize on-screen elements as well
 screen.initScreenElements();
 

@@ -1,15 +1,11 @@
 import {player, scene, gameSettings} from "./globals.js";
-import {
-  copyPosScaleRotFromTo,
-  loadMesh,
-  meshCollisionCallback,
-  teleportPlayer
-} from "./utils.js";
+import {loadMesh, teleportPlayer} from "./utils.js";
 import * as utils from "./utils.js";
 import * as npc from "./npc.js";
 import * as animation from "./animation.js";
+import * as dialog from "./dialog.js";
 
-const assetDir = './res/models/';
+const assetDir = "./res/models/";
 const assetList = {
   debug: ["defaultCube_1x1.glb"],
   items: [
@@ -37,7 +33,7 @@ const assetList = {
     "levels/first_level.glb",
   ],
 };
-export let collectables = [], physicsObjectsTouching = [], totalCollectibles = 0, cameras = [];
+export let collectables = [], physicsObjectsTouching = [], totalCollectibles = 0, cameras = [], collectableGroupNodes = [];
 
 /** @desc Handles the setup and initialization of a given level mesh. Parses various mesh data and custom level colliders, as well as any lights or animations found */
 export function handleLevelModel(result) {
@@ -59,8 +55,8 @@ export function handleLevelModel(result) {
           copyPosScaleRotFromTo(curGeo, groupNode);
           animation.animateCollectable(groupNode); // Apply looping float + spin once at spawn
           totalCollectibles++;
+          collectableGroupNodes.push(groupNode);
         }
-        curGeo.outlineColor = new BABYLON.Color3(1,1,1); // set initial color before rainbow animation takes over
         curGeo.outlineWidth = gameSettings.defaultLineThickness * 2;
         animation.animateCollectableColor(curGeo); // rainbow outline cycle
         curGeo.parent = groupNode; // Set subgeometry parent to groupNode transform node
@@ -125,7 +121,7 @@ export function handleLevelModel(result) {
       groupMasses.set(groupId, (groupMasses.get(groupId) ?? 0) + vol * massScalingVal);
     }
   }
-  for (const [gId, mass] of groupMasses) { groupMasses.set(gId, Math.min(50, Math.max(0.1, mass))); }
+  for (const [groupId, mass] of groupMasses) { groupMasses.set(groupId, Math.min(50, Math.max(1, mass))); }
 
   for (const [baseName, meshes] of physicsGroups) {
     meshes.forEach(m => { m.setParent(null); m.computeWorldMatrix(true); });
@@ -137,7 +133,7 @@ export function handleLevelModel(result) {
       const srcPos = new BABYLON.Vector3(), srcRot = new BABYLON.Quaternion(), srcScale = new BABYLON.Vector3();
       srcMtx.decompose(srcScale, srcRot, srcPos);
       const merged = BABYLON.Mesh.MergeMeshes(meshes, false, true, undefined, true, true); // multiMultiMaterials preserves all source materials so merged serves as both visual and physics body
-      if (!merged) { console.warn(`[Physics] MergeMeshes failed for "${baseName}", skipping`); continue; }
+      if (!merged) { console.warn("Physics: MergeMeshes failed for '"+baseName+"', skipping"); continue; }
       merged.bakeTransformIntoVertices(srcMtx.clone().invert()); // convert world-space verts back to source local space, then restore source transform so Havok gets correct rotation/scale
       merged.refreshBoundingInfo(); // recompute AABB after baking so frustum culling uses correct local bounds
       merged.position = srcPos; merged.rotationQuaternion = srcRot; merged.scaling = srcScale;
@@ -171,7 +167,7 @@ export function handleLevelModel(result) {
       }
     } else {
       const bb = physicsBody.getBoundingInfo().boundingBox;
-      const mass = Math.min(50, Math.max(0.1, // Lock mass value between 50 and 0.1
+      const mass = Math.min(50, Math.max(1, // Lock mass value between 50 and 1
         (bb.maximumWorld.x - bb.minimumWorld.x) * (bb.maximumWorld.y - bb.minimumWorld.y) * (bb.maximumWorld.z - bb.minimumWorld.z) * massScalingVal
       ));
       new BABYLON.PhysicsAggregate(physicsBody, BABYLON.PhysicsShapeType.CONVEX_HULL, {mass, friction: 0.9}, scene);
@@ -196,15 +192,15 @@ export function handleLevelModel(result) {
           npc.spawnNPC(npcName, data.absolutePosition.clone()); // async fire-and-forget
         }else if(data.name.endsWith("_cam")){
           cameras.push(data);
-          console.log(data.name, data);
+          //console.log(data.name, data);
         }
         break;
     }
   }
-  for(let light of result.lights){
-    // Load scene lights (and fix intensity)
-    //light.intensity *= 0.0025; // Fix for intensity scaling issue, adjust as necessary
-  }
+  /*for(let light of result.lights){
+    light.intensity *= 0.0025; // Fix intensity scaling, adjust as necessary TODO: add lighting/shadows back into the game
+  }*/
+  collectableGroupNodes.forEach(groupNode => groupNode.setEnabled(false)); // Start all collectables disabled/invisible until quest starts
   //utils.watchCollider(scene.getMeshByName("CatBed_Torus_collider")); // TODO: seemingly not working anymore? double check later on
 }
 
@@ -217,11 +213,51 @@ function createCollectibleItem(itemMesh) {
   // The callback receives no parameters; we rely on `itemMesh` from the closure
   meshCollisionCallback(itemMesh, "onEnter", player.body, () => {
     const groupNode = itemMesh.metadata.parentNode; // Gets parent transformNode to access all other collectable submeshes
-    if (groupNode) {
-      //groupNode.getChildren().forEach(child=>child.dispose()); // Dispose of all submeshes
-      groupNode.dispose(); // Finally, dispose the empty TransformNode
+    if (groupNode && groupNode.isEnabled() && !dialog.isDialogPlaying()) { // Guard: ignore hits during cutscenes and prevent double-counting
+      groupNode.setEnabled(false); // Hide instead of dispose so the quest can be reset and collectables re-shown
       player.collectableCount++;
-      console.log("Collectible obtained! "+player.collectableCount+"/"+totalCollectibles);
+      if (player.collectableCount >= totalCollectibles) {
+        player.allCollected = true;
+        if (player.questState.started) player.questState.complete = true;
+        const npcName = player.questState.npcName || "your friend";
+        utils.showToastPrompt("✅ " + totalCollectibles + " items found!<br>Return to " + npcName + " to collect your reward! 🎁");
+      } else {
+        utils.showToastPrompt("🧶 " + player.collectableCount + " / " + totalCollectibles + " items collected!");
+      }
+    }
+  });
+}
+/** @desc Copies the position, scale, and rotation values of `fromMesh` onto `toMesh` using world matrix decomposition. Not meant to replace parenting, intended for one-time initializations only. */
+function copyPosScaleRotFromTo(fromMesh, toMesh) {
+  const worldMtx = fromMesh.getWorldMatrix();
+  return worldMtx.decompose(toMesh.scale, toMesh.rotationQuaternion, toMesh.position);
+}
+/** @desc Creates a mesh intersection trigger on `collisionMesh` that fires `callback` when `detectMesh` enters (or exits) it. Disables physical collisions on `collisionMesh` since it acts as a trigger volume only.
+ * @returns BABYLON.ActionManager */
+function meshCollisionCallback(collisionMesh, onEnterOrExit, detectMesh, callback) {
+  collisionMesh.collisionsEnabled = false; // Disable collisions since we're detecting onEnter and onExit events for it
+  const onExit = (onEnterOrExit === "exit" || onEnterOrExit === "onExit");
+  const newAction = new BABYLON.ExecuteCodeAction({
+    trigger: onExit ? 13 : 12, // ActionManager.OnIntersectionEnterTrigger and ExitTrigger are 12 and 13 respectively
+    parameter: {mesh: detectMesh, usePreciseIntersection: true}
+  }, callback);
+  collisionMesh.actionManager = new BABYLON.ActionManager(scene);
+  collisionMesh.actionManager.registerAction(newAction);
+  return collisionMesh.actionManager;
+}
+/** @desc Per-frame watcher that tracks which physics collider meshes are currently intersecting `targetMesh`, logging entries and exits into `physicsObjectsTouching`. Use sparingly. */
+function watchCollider(targetMesh) {
+  scene.onBeforeRenderObservable.add(() => {
+    const nowTouching = scene.meshes.filter(mesh => (mesh.name.includes("_physics_collider") || mesh.name.includes("_physics_sphCollider") || mesh.name.includes("_physics_cylCollider")) && targetMesh.intersectsMesh(mesh, false));
+    nowTouching.forEach(mesh => {
+      if (physicsObjectsTouching.includes(mesh)) return;
+      physicsObjectsTouching.push(mesh);
+      if(gameSettings.debugMode) console.log("Physics object entered:", mesh.name);
+    });
+    for (let i = physicsObjectsTouching.length - 1; i >= 0; i--) {
+      if (nowTouching.includes(physicsObjectsTouching[i])) continue;
+      if(gameSettings.debugMode) console.log("Physics object left:", physicsObjectsTouching[i].name);
+      physicsObjectsTouching.splice(i, 1);
     }
   });
 }

@@ -1,0 +1,371 @@
+{
+  "start": "intro",
+  "nodes": {
+    "intro": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "cutsceneBars": true,
+      "text": "Welcome to the dialog/cutscene system showcase.\nThis file (dialog_system_examples.json) demonstrates every available node property and waitFor condition supported by dialog.js. Use the numbered keys (1-9) to select a feature to preview. You can revisit features as many times as you like.",
+      "next": "menu_1"
+    },
+
+    "menu_1": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "cutsceneBars": false,
+      "clearAbilities": true,
+      "cameraTarget": "player",
+      "text": "Select a feature to preview (page 1 of 2):",
+      "choices": [
+        { "text": "title + subtitle + delay: Titlecard opening sequence with auto-advance", "next": "feat_titlecard" },
+        { "text": "delay: Auto-advance a text node after N milliseconds", "next": "feat_delay" },
+        { "text": "text + character: Basic dialog text with a custom speaker name", "next": "feat_text" },
+        { "text": "background: Override the dialog overlay background color", "next": "feat_background" },
+        { "text": "cutsceneBars: Toggle cinematic black bars at top and bottom of screen", "next": "feat_bars" },
+        { "text": "cameraTarget (array): Pin camera to world-space XYZ coordinates", "next": "feat_cam_coords" },
+        { "text": "cameraTarget (string): Pin camera to a named mesh or TransformNode", "next": "feat_cam_mesh" },
+        { "text": "cameraAngles: Directly set camera yaw, pitch, and distance", "next": "feat_cam_angles" },
+        { "text": "Show more features... (page 2 of 2)", "next": "menu_2" }
+      ]
+    },
+
+    "feat_titlecard": {
+      "title": "title + subtitle + delay",
+      "subtitle": "This is the subtitle. This node uses title, subtitle, and delay (4000ms). It auto-advances without player input.",
+      "delay": 4000,
+      "next": "feat_titlecard_done"
+    },
+    "feat_titlecard_done": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "text": "That was a titlecard node. \"title\" sets the large centered text, \"subtitle\" sets the smaller text below it, and \"delay\" (4000ms) caused it to auto-advance without any input. The background defaults to black during titlecard display.",
+      "next": "menu_1"
+    },
+
+    "feat_delay": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "text": "This node uses \"delay\": 2000. It will auto-advance in 2 seconds without any player input. Delay is specified in milliseconds and works on both titlecard and regular text nodes.",
+      "delay": 2000,
+      "next": "feat_delay_done"
+    },
+    "feat_delay_done": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "text": "The previous node auto-advanced after 2000ms via the \"delay\" property. Useful for timed pauses or cinematic beats that do not require player interaction.",
+      "next": "menu_1"
+    },
+
+    "feat_text": {
+      "character": "A Custom Speaker Name",
+      "background": "transparent",
+      "text": "This node demonstrates \"text\" and \"character\". The speaker label above this text box is set by the \"character\" property. The body text is set by \"text\". Newlines using \\n are supported in text strings.\nThis is a second line produced by a \\n character in the text value.",
+      "next": "menu_1"
+    },
+
+    "feat_background": {
+      "character": "Dialog System",
+      "background": "rgba(10, 40, 80, 0.95)",
+      "text": "The \"background\" property is now set to rgba(10,40,80,0.95) on this node, turning the dialog overlay dark blue. Any valid CSS color string is accepted. The background persists across nodes until another node changes it.",
+      "next": "feat_background_done"
+    },
+    "feat_background_done": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "text": "\"background\": \"transparent\" has reset the overlay on this node. Always explicitly reset the background when returning to a neutral state, since it does not reset automatically between nodes.",
+      "next": "menu_1"
+    },
+
+    "feat_bars": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "cutsceneBars": true,
+      "text": "\"cutsceneBars\": true is active on this node. The black cinematic bars at the top and bottom of the screen are now visible. They persist until a node explicitly sets \"cutsceneBars\": false.",
+      "next": "feat_bars_done"
+    },
+    "feat_bars_done": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "cutsceneBars": false,
+      "text": "\"cutsceneBars\": false hides them again. Cinematic bars are independent of all other properties and must be toggled explicitly.",
+      "next": "menu_1"
+    },
+
+    "feat_cam_coords": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "cameraTarget": [0, 3, 0],
+      "text": "\"cameraTarget\": [0, 3, 0] pins the camera to look at world-space coordinates X=0, Y=3, Z=0 via an [x, y, z] array. The camera locks there until another cameraTarget is set or the dialog ends.",
+      "next": "feat_cam_coords_done"
+    },
+    "feat_cam_coords_done": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "cameraTarget": "player",
+      "text": "Camera restored to the player using \"cameraTarget\": \"player\". The special string value \"player\" (or null) always returns the camera to its default follow-player behavior and exits showcase mode.",
+      "next": "menu_1"
+    },
+
+    "feat_cam_mesh": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "cameraTarget": "camOffset",
+      "text": "\"cameraTarget\": \"camOffset\" pins the camera to the TransformNode named camOffset in the scene. Any valid scene mesh or TransformNode name works. If the target root mesh has zero geometry vertices, the camera system automatically traverses to the first child mesh with geometry and uses its bounding box center as the target point.",
+      "next": "feat_cam_mesh_done"
+    },
+    "feat_cam_mesh_done": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "cameraTarget": "player",
+      "text": "Camera restored to player. The string-based cameraTarget is used in quest cutscenes to pan the camera onto NPCs and collectable objects by their scene node names.",
+      "next": "menu_1"
+    },
+
+    "feat_cam_angles": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "cameraAngles": { "yaw": 1.57, "pitch": 1.2, "distance": 2.0 },
+      "text": "\"cameraAngles\" directly sets camera orientation: yaw (alpha, horizontal rotation), pitch (beta, vertical angle), and distance (radius from target). This node sets yaw=1.57 (~90 degrees), pitch=1.2, distance=2.0. These are applied immediately at node start.",
+      "next": "menu_1"
+    },
+
+    "menu_2": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "cutsceneBars": false,
+      "clearAbilities": true,
+      "cameraTarget": "player",
+      "text": "Select a feature to preview (page 2 of 2):",
+      "choices": [
+        { "text": "enable: Grant specific player abilities mid-dialog", "next": "feat_enable" },
+        { "text": "clearAbilities: Revoke all previously granted abilities", "next": "feat_clear" },
+        { "text": "waitFor conditions: Step through all 10 waitFor conditions in sequence", "next": "feat_wf_cam360" },
+        { "text": "resetQuest: Reset all quest state flags on the player object", "next": "feat_reset_quest" },
+        { "text": "Return to beginning (page 1 of 2)", "next": "menu_1" }
+      ]
+    },
+
+    "feat_enable": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "enable": ["move", "jump"],
+      "text": "\"enable\": [\"move\", \"jump\"] is set on this node. The player can now move and jump freely. Abilities added via \"enable\" accumulate in a persistent set and carry forward to all subsequent nodes until clearAbilities resets them. Supported ability flags: move, jump, paw, crouch, bite.",
+      "next": "menu_2"
+    },
+
+    "feat_clear": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "enable": ["move", "jump", "paw"],
+      "text": "Step 1 of 2: \"enable\": [\"move\", \"jump\", \"paw\"] grants three abilities. The player can now move, jump, and swat. On the next node, \"clearAbilities\": true will strip all of them.",
+      "next": "feat_clear_2"
+    },
+    "feat_clear_2": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "clearAbilities": true,
+      "text": "Step 2 of 2: \"clearAbilities\": true is set on this node. All previously accumulated abilities (move, jump, paw) have been revoked. The persistent ability set is now empty. New abilities can be granted again via \"enable\" on any following node.",
+      "next": "menu_2"
+    },
+
+    "feat_reset_quest": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "text": "\"resetQuest\": true resets all quest-related player state: questState.started, questState.complete, questState.rewardClaimed, questState.npcName, collectableCount, and allCollected are all cleared, and every collectableGroupNode is re-hidden. The next node will execute this.",
+      "next": "feat_reset_quest_exec"
+    },
+    "feat_reset_quest_exec": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "resetQuest": true,
+      "text": "resetQuest has executed on this node. All quest state has been wiped and all collectables have been re-hidden. Typically used to allow the player to restart a quest from scratch via an in-progress dialog cancel flow.",
+      "next": "menu_2"
+    },
+
+    "feat_wf_cam360": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "text": "(1 of 10) \"waitFor\": \"cam360\" blocks progression until the player moves the camera left, right, up, and down at least once each. A condition prompt appears tracking all four directions. Move your mouse in all four directions to resolve this condition.",
+      "waitFor": "cam360",
+      "next": "feat_wf_cam360_next"
+    },
+    "feat_wf_cam360_next": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "clearAbilities": true,
+      "text": "cam360 condition resolved. All four camera directions detected.",
+      "choices": [
+        { "text": "View the next 'waitFor' condition named 'wasd'", "next": "feat_wf_wasd" },
+        { "text": "Return to previous menu", "next": "menu_2" }
+      ]
+    },
+
+    "feat_wf_wasd": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "enable": ["move"],
+      "text": "(2 of 10) \"waitFor\": \"wasd\" requires all four WASD keys to be pressed at least once. Move is enabled on this node. Press W, A, S, and D to resolve the condition.",
+      "waitFor": "wasd",
+      "next": "feat_wf_wasd_next"
+    },
+    "feat_wf_wasd_next": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "clearAbilities": true,
+      "text": "wasd condition resolved. All four movement keys detected.",
+      "choices": [
+        { "text": "View the next 'waitFor' condition named 'sprint_walk'", "next": "feat_wf_sprint_walk" },
+        { "text": "Return to previous menu", "next": "menu_2" }
+      ]
+    },
+
+    "feat_wf_sprint_walk": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "enable": ["move"],
+      "text": "(3 of 10) \"waitFor\": \"sprint_walk\" requires the player to sprint (Shift + move) AND walk (Alt + move) at least once each. Move is enabled. Hold Shift while moving to sprint, then hold Alt while moving to walk.",
+      "waitFor": "sprint_walk",
+      "next": "feat_wf_sprint_walk_next"
+    },
+    "feat_wf_sprint_walk_next": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "clearAbilities": true,
+      "text": "sprint_walk condition resolved. Both sprint and walk detected.",
+      "choices": [
+        { "text": "View the next 'waitFor' condition named 'crouch'", "next": "feat_wf_crouch" },
+        { "text": "Return to previous menu", "next": "menu_2" }
+      ]
+    },
+
+    "feat_wf_crouch": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "enable": ["move", "crouch"],
+      "text": "(4 of 10) \"waitFor\": \"crouch\" requires the player to hold the crouch key (C). Both move and crouch are enabled on this node. Hold C to crouch and resolve the condition.",
+      "waitFor": "crouch",
+      "next": "feat_wf_crouch_next"
+    },
+    "feat_wf_crouch_next": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "clearAbilities": true,
+      "text": "crouch condition resolved. Crouching detected.",
+      "choices": [
+        { "text": "View the next 'waitFor' condition named 'swat'", "next": "feat_wf_swat" },
+        { "text": "Return to previous menu", "next": "menu_2" }
+      ]
+    },
+
+    "feat_wf_swat": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "enable": ["move", "paw"],
+      "text": "(5 of 10) \"waitFor\": \"swat\" requires the player to hold Left Mouse Button to swat. The paw ability is enabled on this node. Hold LMB to swat and resolve the condition.",
+      "waitFor": "swat",
+      "next": "feat_wf_swat_next"
+    },
+    "feat_wf_swat_next": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "clearAbilities": true,
+      "text": "swat condition resolved. Left mouse swat detected.",
+      "choices": [
+        { "text": "View the next 'waitFor' condition named 'swat_modifiers'", "next": "feat_wf_swat_mods" },
+        { "text": "Return to previous menu", "next": "menu_2" }
+      ]
+    },
+
+    "feat_wf_swat_mods": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "enable": ["move", "paw"],
+      "text": "(6 of 10) \"waitFor\": \"swat_modifiers\" requires both a fast swat (Shift + LMB) and a slow swat (Alt + LMB). The paw ability is enabled. Use Shift+LMB for a faster swat, then Alt+LMB for a slower swat.",
+      "waitFor": "swat_modifiers",
+      "next": "feat_wf_swat_mods_next"
+    },
+    "feat_wf_swat_mods_next": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "clearAbilities": true,
+      "text": "swat_modifiers condition resolved. Both fast and slow swat detected.",
+      "choices": [
+        { "text": "View the next 'waitFor' condition named 'bite'", "next": "feat_wf_bite" },
+        { "text": "Return to previous menu", "next": "menu_2" }
+      ]
+    },
+
+    "feat_wf_bite": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "enable": ["bite"],
+      "text": "(7 of 10) \"waitFor\": \"bite\" requires the player to successfully latch onto a valid physics object. The bite ability is enabled on this node. Right-click near a physics object to grab it. Biting empty air does not count: player.biteObject must be set to a non-undefined mesh reference.",
+      "waitFor": "bite",
+      "next": "feat_wf_bite_next"
+    },
+    "feat_wf_bite_next": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "clearAbilities": true,
+      "text": "bite condition resolved. player.biteObject was set to a valid mesh reference by startBite().",
+      "choices": [
+        { "text": "View the next 'waitFor' condition named 'jump:N'", "next": "feat_wf_jump" },
+        { "text": "Return to previous menu", "next": "menu_2" }
+      ]
+    },
+
+    "feat_wf_jump": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "enable": ["move", "jump"],
+      "text": "(8 of 10) \"waitFor\": \"jump:5\" requires player.lastJumpVelocity to reach at least 5 on a single jump. The number after the colon is the minimum velocity threshold. Jump is enabled. Hold Spacebar while standing still to charge up, then release for a powerful jump.",
+      "waitFor": "jump:5",
+      "next": "feat_wf_jump_next"
+    },
+    "feat_wf_jump_next": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "clearAbilities": true,
+      "text": "jump:N condition resolved. player.lastJumpVelocity met or exceeded the minimum threshold of 5.",
+      "choices": [
+        { "text": "View the next 'waitFor' condition named 'itemShowcase'", "next": "feat_wf_item_showcase" },
+        { "text": "Return to previous menu", "next": "menu_2" }
+      ]
+    },
+
+    "feat_wf_item_showcase": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "text": "(9 of 10) \"waitFor\": \"itemShowcase\" enables each collectableGroupNode one at a time, pins the camera to each in sequence, and waits for Spacebar to advance. At completion it sets questState.started = true. Press Spacebar to step through the showcase.",
+      "waitFor": "itemShowcase",
+      "next": "feat_wf_item_showcase_next"
+    },
+    "feat_wf_item_showcase_next": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "cameraTarget": "player",
+      "text": "itemShowcase condition resolved. All collectables were shown and are now enabled in the scene.",
+      "choices": [
+        { "text": "View the next 'waitFor' condition named 'remainingItems'", "next": "feat_wf_remaining_items" },
+        { "text": "Return to previous menu", "next": "menu_2" }
+      ]
+    },
+
+    "feat_wf_remaining_items": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "text": "(10 of 10) \"waitFor\": \"remainingItems\" showcases only collectables that are currently enabled (not yet collected). Unlike itemShowcase it does not enable new collectables; it only visits ones already visible in the scene. Press Spacebar to step through.",
+      "waitFor": "remainingItems",
+      "next": "feat_wf_remaining_items_next"
+    },
+    "feat_wf_remaining_items_next": {
+      "character": "Dialog System",
+      "background": "transparent",
+      "cameraTarget": "player",
+      "text": "remainingItems condition resolved. That was the final waitFor condition (10 of 10).",
+      "choices": [
+        { "text": "Return to previous menu", "next": "menu_2" }
+      ]
+    }
+  }
+}

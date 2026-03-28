@@ -2,105 +2,97 @@
   "start": "intro_1",
   "nodes": {
     "intro_1": {
-      "character": "Inner Voice",
+      "character": "{PLAYER}",
       "background": "transparent",
       "cutsceneBars": true,
       "text": "woah... am I actually a cat right now?? this is so cool :3",
       "next": "cam_look"
     },
     "cam_look": {
-      "character": "Inner Voice",
+      "character": "{PLAYER}",
       "background": "transparent",
-      "text": "okay, let me look around a bit ^_^\n(Hint: move your mouse! try looking left, right, up and down!)",
+      "text": "okay, let me look around a bit ^_^",
       "waitFor": "cam360",
       "next": "cam_done"
     },
     "cam_done": {
-      "character": "Inner Voice",
+      "character": "{PLAYER}",
       "background": "transparent",
       "text": "yep. yep yep. this is real. >:3",
       "next": "wasd_move"
     },
     "wasd_move": {
-      "character": "Inner Voice",
+      "character": "{PLAYER}",
       "background": "transparent",
       "enable": ["move"],
-      "text": "ooh, I wonder if I can actually walk around... let me try owo\n(Hint: press W, A, S, and D to move!)",
+      "text": "ooh, I wonder if I can actually walk around... let me try owo",
       "waitFor": "wasd",
       "next": "wasd_done"
     },
     "wasd_done": {
-      "character": "Inner Voice",
+      "character": "{PLAYER}",
       "background": "transparent",
       "enable": ["move"],
       "text": "there we go! look at these little legs :3",
       "next": "sprint_walk_hint"
     },
     "sprint_walk_hint": {
-      "character": "Inner Voice",
+      "character": "{PLAYER}",
       "background": "transparent",
       "enable": ["move"],
-      "text": "I need to figure out how to control my speed better, too...\n(Hint: Sprint by holding Shift, Walk by holding Alt!)",
+      "text": "I need to figure out how to control my speed better, too...",
       "waitFor": "sprint_walk",
       "next": "crouch_hint"
     },
     "crouch_hint": {
-      "character": "Inner Voice",
+      "character": "{PLAYER}",
       "background": "transparent",
       "enable": ["move", "crouch"],
-      "text": "oh wait... can I crouch too?! :o\n(Hint: hold C to crouch!)",
+      "text": "oh wait... can I crouch too?! :o",
       "waitFor": "crouch",
       "next": "crouch_done"
     },
     "crouch_done": {
-      "character": "Inner Voice",
+      "character": "{PLAYER}",
       "background": "transparent",
       "text": "look how sneaky I am >:3",
-      "next": "swat_hint"
-    },
-    "swat_hint": {
-      "character": "Inner Voice",
-      "background": "transparent",
-      "enable": ["move", "paw"],
-      "text": "Also... it would be REALLY COOL if I could swat my paw at things :0\n(Hint: hold Left Mouse to \"Swat\" your paw at objects!)",
-      "waitFor": "swat",
-      "next": "swat_modifiers_hint"
-    },
-    "swat_modifiers_hint": {
-      "character": "Inner Voice",
-      "background": "transparent",
-      "enable": ["move", "paw"],
-      "text": "wait, can I also change how hard I swat?! 0_0\n(Hint: hold Shift+LMB to swat harder, hold Alt+LMB to swat softer!)",
-      "waitFor": "swat_modifiers",
-      "next": "bite_hint"
-    },
-    "bite_hint": {
-      "character": "Inner Voice",
-      "background": "transparent",
-      "enable": ["move", "paw", "bite"],
-      "text": "ooh... what if I right click on something nearby?! let me try!\n(Hint: hold Right Mouse to bite and pull objects toward you!)",
-      "waitFor": "bite",
       "next": "jump_try"
     },
     "jump_try": {
-      "character": "Inner Voice",
+      "character": "{PLAYER}",
+      "background": "transparent",
+      "enable": ["move", "jump"],
+      "text": "oh wait... can I even JUMP?! let me try! ^_^",
+      "waitFor": "jump:1",
+      "next": "swat_hint"
+    },
+    "swat_hint": {
+      "character": "{PLAYER}",
       "background": "transparent",
       "enable": ["move", "paw", "jump"],
-      "text": "NO WAY, THIS IS EPIC! I could literally jump with joy!!! ^_^\n(Hint: Hold spacebar to charge up your jump!)",
-      "waitFor": "jump:5",
+      "text": "Also... it would be REALLY COOL if I could swat my paw at things :0 I wonder if I can change how hard I swat too!",
+      "waitFor": "swat_all",
+      "next": "bite_hint"
+    },
+    "bite_hint": {
+      "character": "{PLAYER}",
+      "background": "transparent",
+      "enable": ["move", "paw", "bite", "jump"],
+      "text": "ooh... what if I right click on something nearby?! let me try!",
+      "waitFor": "bite",
       "next": "npc_search"
     },
     "npc_search": {
-      "character": "Inner Voice",
+      "character": "{PLAYER}",
       "background": "transparent",
-      "enable": ["move", "paw"],
+      "enable": ["move", "paw", "bite"],
       "text": "I should see if anyone else is around now!",
       "next": "npc_end"
     },
     "npc_end": {
-      "character": "Inner Voice",
+      "character": "{PLAYER}",
       "background": "transparent",
-      "enable": ["move", "paw"],
+      "enable": ["move", "paw", "bite"],
       "text": "I should also explore this place... looks like there's lots of fun stuff to do :o"
     }
   }

@@ -1,0 +1,51 @@
+{
+  "start": "check_in",
+  "nodes": {
+    "check_in": {
+      "character": "Testificate",
+      "cameraTarget": "npc_Testificate",
+      "cutsceneBars": true,
+      "text": "Have some questions for me?",
+      "choices": [
+        { "text": "How many items are left?", "next": "count_response" },
+        { "text": "Where are the rest of the items?", "next": "showcase_remaining" },
+        { "text": "Alright, I'll be back soon!", "next": "farewell" },
+        { "text": "I changed my mind, I have other things to get back to...", "next": "cancel_confirm" }
+      ]
+    },
+    "count_response": {
+      "character": "Testificate",
+      "text": "Hmm, let me think... You still have {REMAINING} out of {TOTAL} items left to find!",
+      "next": "check_in"
+    },
+    "showcase_remaining": {
+      "character": "Testificate",
+      "cutsceneBars": true,
+      "text": "Let me remind you of the spots you haven't checked yet...",
+      "waitFor": "remainingItems",
+      "next": "check_in"
+    },
+    "farewell": {
+      "character": "Testificate",
+      "text": "Good luck out there, I'm rooting for you!"
+    },
+    "cancel_confirm": {
+      "character": "Testificate",
+      "text": "Are you sure? (Hint: Saying 'Yes' will cancel your current quest)",
+      "choices": [
+        { "text": "Yes, cancel the quest.", "next": "cancel_yes" },
+        { "text": "Actually, never mind!", "next": "cancel_no" }
+      ]
+    },
+    "cancel_yes": {
+      "character": "Testificate",
+      "resetQuest": true,
+      "text": "Alright, no hard feelings! Come back and chat whenever you change your mind."
+    },
+    "cancel_no": {
+      "character": "Testificate",
+      "text": "No worries, I knew you wouldn't give up!",
+      "next": "check_in"
+    }
+  }
+}

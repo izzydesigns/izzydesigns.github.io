@@ -1,0 +1,59 @@
+{
+  "start": "quest_intro_1",
+  "nodes": {
+    "quest_intro_1": {
+      "character": "Testificate",
+      "cameraTarget": "npc_Testificate",
+      "cutsceneBars": true,
+      "text": "Oh, {PLAYER}! I'm so glad you're here... I actually need your help with something.",
+      "next": "quest_intro_2"
+    },
+    "quest_intro_2": {
+      "character": "Testificate",
+      "text": "I've been hiding some of my favorite items around the house, but I can't quite remember where I put them all.",
+      "next": "quest_offer"
+    },
+    "quest_offer": {
+      "character": "Testificate",
+      "text": "Would you help me find them? Please?",
+      "choices": [
+        { "text": "Of course! I love treasure hunts!", "next": "quest_accept" },
+        { "text": "Maybe another time...", "next": "quest_decline" }
+      ]
+    },
+    "quest_decline": {
+      "character": "Testificate",
+      "text": "No worries at all. Come find me whenever you're ready!"
+    },
+    "quest_accept": {
+      "character": "Testificate",
+      "text": "Thank you so much! Let me show you where I last remember seeing them...",
+      "next": "quest_showcase"
+    },
+    "quest_showcase": {
+      "character": "Testificate",
+      "cutsceneBars": true,
+      "text": "Take a good look at each spot! Press Spacebar whenever you're ready to see the next one.",
+      "waitFor": "itemShowcase",
+      "next": "quest_post_showcase"
+    },
+    "quest_post_showcase": {
+      "character": "Testificate",
+      "cameraTarget": "npc_Testificate",
+      "cutsceneBars": true,
+      "text": "Those are my most treasured items! They've scattered all around the house... please bring every last one back to me!",
+      "next": "quest_end"
+    },
+    "quest_end": {
+      "character": "Testificate",
+      "cutsceneBars": true,
+      "text": "I'll be right here waiting for you. Good luck, friend!"
+    },
+    "reward_start": {
+      "character": "Testificate",
+      "cameraTarget": "npc_Testificate",
+      "cutsceneBars": true,
+      "text": "You found them ALL?! Oh my goodness... I can't believe it! You are absolutely amazing!"
+    }
+  }
+}

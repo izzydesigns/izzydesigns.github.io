@@ -1,6 +1,9 @@
 // NOTE: This file only serves as a way to share variables across other files
 // Anything imported here, should NOT import this file as a result!!! (avoid circular dependencies).
 
+/** @desc Tracks which keyboard keys are currently held down, keyed by `KeyboardEvent.code`. Set to `true` on keydown, `false` on keyup, by `inputs.js` */
+export const keysDown = {};
+/** @desc Cached jQuery references to all on-screen UI elements, grouped by menu and feature. Used throughout the codebase to read and update DOM state without repeated selector lookups */
 export const ui = {
   // Menu screens
   mainMenu: $("#menus .mainMenu"),
@@ -49,6 +52,13 @@ export const ui = {
   npcPromptName: $("#menus .ingameHUDMenu .npcPromptName"),
   controlsInfo: $("#menus .controlsInfo"),
   controlsInfo_dismissBtn: $("#menus .controlsInfo .controlsInfoDismiss"),
+  toastPrompt: $(".toastPrompt"),
+  dialogOverlay: $(".cutsceneOverlay"),
+  dialogText: $(".dialogText"), charText: $(".charText"),
+  choicesElem: $("ul.dialogChoices"),
+  cutsceneBarElem: $(".cutsceneOverlay .dialogBar"),
+  titleText: $(".titlecardText"), subtitleText: $(".subtitleText"),
+  nodePromptElem: $(".conditionPrompt"),
 };
 /** @desc Object containing raw `animationGroup` names, multiple animation names provided specify which animations have a follow-up animation that must be played upon completion */
 export const animationData = {
@@ -127,7 +137,7 @@ export const gameSettings = {
     devMenu: "Tab",
     forward: "KeyW", left: "KeyA", back: "KeyS", right: "KeyD",
     jump: "Space", sprint: "ShiftLeft", walk: "AltLeft", crouch: "KeyC",
-    interact: "KeyE",
+    interact: "KeyE", proceedDialog: "Space", // TODO: Look into changing this, conflicts with jumping & requires workarounds
   },
   menus: {
     "main": ui.mainMenu,
@@ -142,58 +152,57 @@ export const gameSettings = {
   defaultSpawnPoint: new BABYLON.Vector3(0,5,0), // Used if no "spawnpoint" data point is found when parsing level mesh
   defaultGravity: new BABYLON.Vector3(0, -9, 0), // Gravity value used when initializing game engine object
   defaultCamOffset: new BABYLON.Vector3(0,0.85,0),
-  defaultCamDist: 3, defaultMinCamDist: 0.25, defaultMaxCamDist: 4,
-  defaultMoveAccel: 0.05, defaultMoveBlend: 0.2, defaultInputLerpSpeed: 0.1, // defaultMoveBlend = lerp factor for ground velocity blending; defaultInputLerpSpeed = smooths direction changes (~0.5s for 180 at 60fps)
-  defaultMaxSlopeAngle: 35, defaultSlopeAngle: 25,
+  defaultCamDist: 3, defaultMinCamDist: 0.5, defaultMaxCamDist: 4, // Default, min & max camera zoom/distance values
+  defaultMoveAccel: 0.1, defaultMoveBlend: 0.2, defaultInputLerpSpeed: 0.1, // defaultMoveBlend = lerp factor for ground velocity blending; defaultInputLerpSpeed = smooths direction changes (~0.5s for 180 at 60fps)
+  defaultSlopeAngle: 25, defaultMaxSlopeAngle: 35, // Slope angles (first defines when player is no longer able to sprint, second is angle to cause player sliding)
   defaultMoveSpeed: 3, defaultWalkSpeed: 2, defaultSprintSpeed: 5, // Default move, walk, and sprint speeds
-  defaultJumpHeight: 3.5, defaultMinJumpHeight: 2,
+  defaultMinJumpHeight: 2.25, defaultJumpChargeTime: 500, // ms to reach full charged jump height
   defaultJumpDelay: 0, // Delay before player can jump again (in seconds)
+  defaultCrouchHeight: 0.6, // (0-1) Number to scale player height by when crouching (0.6 = 60% height while crouched)
   defaultAfkDelay: 15000, // After 15 seconds, sleeping idle animation will play
   defaultIdleAnimation: animationData.idleStand, // Animation to initialize player model with
   defaultAnimBlendValue: 0.1, // Set to zero in order to disable animation blending & weights
   defaultAnimChangeDelay: 50, // Minimum ms between animation changes to prevent rapid flickering between states
   defaultCollectableRotSpeed: 0.5, // How fast collectables rotate (how much y value incremented per frame, in radians I believe)
   defaultRotationSpeed: 0.08, // player.body rotation slerp value
-  defaultBiteRadius: 1.5,        // Max world-unit distance from mouth anchor to latch onto a physics object
+  defaultBiteRadius: 1.75, // Max world-unit distance from mouth anchor to latch onto a physics object
   defaultBiteBreakDistance: 1.0, // Stretch distance (world units) at which the bite releases; spring naturally resists before this point
-  defaultBiteSpringStrength: 500, // Spring stiffness (N/m) pulling grab point toward mouth anchor
-  defaultBiteDamping: 16,        // Damping coefficient opposing target velocity, prevents oscillation
+  defaultBiteSpringStrength: 200, // Spring stiffness (N/m) pulling grab point toward mouth anchor
+  defaultBiteDamping: 16, // Damping coefficient opposing target velocity, prevents oscillation
   defaultLineThickness: 0.01, // mesh.outline thickness
-  defaultAirControl: 0.15,
+  defaultAirControl: 0.15, // Amount of control the player has in the air (lerps speed of movement in air)
 };
 /** @desc This global variable contains all the relevant data for the player's object. This also contains the `player.body` and `player.mesh` variables, which are used in various places */
 export const player = {
-  name: "Player",
-  model: undefined, mesh: undefined, body: undefined, camera: undefined, camOffset: undefined,
-  impostorOptions: { // Player collider properties
-    mass: 3, friction: 0.9, restitution: 0
-  },
-  boundingBox: new BABYLON.Vector3(0.175, 0.4, 0.45), // Default size of `player.body` (scaled by bodyScale)
-  bodyScale: 2.5, // Player scale multiplier
+  name: "Player", model: undefined, mesh: undefined, body: undefined,
+  camera: undefined, camOffset: undefined, thirdPersonCamOffset: undefined, neckBoneTracker: undefined,
+  bodyScale: 2.5, boundingBox: new BABYLON.Vector3(0.175, 0.4, 0.45), // Default size of `player.body` (scaled by bodyScale)
+  impostorOptions: { mass: 3, friction: 0.9, restitution: 0 }, // Player collider properties
+  respawnPoint: new BABYLON.Vector3(0,0,0),
+  curSkin: game.playerSkins.default, curModel: game.playerModels.default,
+  curAnimation: gameSettings.defaultIdleAnimation,
+  isAnimTransitioning: false, lastAnimation: undefined,
+  cursorLocked: false, firstPerson: false, onGround: true,
   movement: {
-    canMove: true, canSprint: true,
+    isAfk: false, isSliding: false, isBiting: false,
     isMoving: false, isJumpBtnDown: false, isJumping: false,
     isWalking: false, isSprinting: false, isCrouching: false,
     forward: false, back: false, left: false, right: false,
   },
-  jumpHeight: gameSettings.defaultJumpHeight,
-  curMoveSpeed: gameSettings.defaultMoveSpeed,
-  onGround: false, isSliding: false,
-  cursorLocked: false, firstPerson: false,
-  isAfk: false, lastMoveTime: 0, speed: 0,
+  canMove: true, canSprint: true, canChargeJump: true,
+  canPaw: true, canCrouch: true, canBite: true, canJump: true,
+  swatting: false, swatStrength: 8, lastSwatTime: performance.now(),
+  biteTarget: undefined, hoverTarget: undefined, mouthAnchor: undefined, pawHitbox: undefined,
+  biteGrabPivotB: undefined, // Target-local grab pivot stored at bite time for stretch/break checks
+  jumpChargeStart: 0, // timestamp (performance.now) when jump button was pressed
+  lastJumpVelocity: 0, // Y velocity applied on last jump (used by dialog jump: condition)
+  lastMoveTime: 0, speed: 0, curMoveSpeed: gameSettings.defaultMoveSpeed,
   surfaceTiltDeg: 0, surfaceNormal: new BABYLON.Vector3(0, 1, 0),
-  curSkin: game.playerSkins.default, curModel: game.playerModels.default,
-  curAnimation: gameSettings.defaultIdleAnimation, isAnimTransitioning: false, lastAnimation: undefined,
+  questState: {
+    npcName: undefined, rewardClaimed: false,
+    started: false, complete: false,
+  },
   collectableCount: 0, allCollected: false,
-  lastSwatTime: performance.now(), swatting: false,
-  swatStrength: 3, jumpCount: 0,
-  canJump: true, canPaw: true, canCrouch: true, canBite: true,
-  isBiting: false, biteTarget: null, hoverTarget: null, mouthAnchor: null,
-  biteGrabPivotB: null, // Target-local grab pivot stored at bite time for stretch/break checks
-  chargeJumpDelay: 1000, // ms to reach full charged jump height from standing still
-  jumpChargeStart: 0,   // timestamp (performance.now) when jump button was pressed
-  lastJumpVelocity: 0,  // Y velocity applied on last jump (used by dialog jump: condition)
-  respawnPoint: new BABYLON.Vector3(0,0,0),
-  tutorialMode: true,
   curMode: "default", modes: ["default","zoomies","sneak"], // TODO: Implement me! :)
+  tutorialMode: true, // Plays `tutorial.json` to introduce controls to the player
 };

@@ -2,7 +2,7 @@ import {animationData, gameSettings, player, scene, ui} from "./globals.js";
 import {loadMesh} from "./utils.js";
 
 export const NPC_ANIM_TAG = { isNPCAnim: true }; // Metadata key applied to NPC animation groups so `stopAllAnimations()` in `animation.js` can skip them
-export let currentlyLookingAtNPC = null; // Tracks which NPC the player is currently looking at. Exported so `game.js` can read it for the interact key handler.
+export let currentlyLookingAtNPC = undefined; // Tracks which NPC the player is currently looking at. Exported so `game.js` can read it for the interact key handler.
 export let npcs = []; // Array of all spawned NPC data objects: { name, root, meshes, animGroups }
 const npcSpeakingDist = 3; // Max world-unit distance before "looking at NPC" detection activates
 
@@ -13,7 +13,13 @@ export async function spawnNPC(npcName, position) {
   const rootMesh = result.meshes[0];
   rootMesh.name = rootMesh.id = "npc_"+npcName;
   rootMesh.position = position.clone();
-  rootMesh.scaling = player.mesh.scaling.clone(); // Match player model scale (for now)
+  rootMesh.scaling = player.mesh.scaling.scale(player.bodyScale);
+  // Rename child meshes away from "Player_*" to avoid confusion with the actual player's meshes
+  result.meshes.forEach(m => {
+    if (m === rootMesh) return;
+    if (m.name === "Player") m.name = m.id = "npc_"+npcName+"_armature";
+    else m.name = m.id = m.name.replace(/^Player/, "npc_"+npcName);
+  }); // Match player's effective world scale (mesh scale × body scale)
   // TODO: set NPC rotation value as well (and set to rotate to face player when within "speaking" range, default rotation otherwise)
 
   // Find and start the idle stand animation on loop, tagged so stopAllAnimations() skips it
@@ -41,7 +47,7 @@ export async function spawnNPC(npcName, position) {
 export function handleNPCInteractions() {
   if (!player.body || !player.camera || npcs.length === 0) return;
   const screenW = scene.getEngine().getRenderWidth(), screenH = scene.getEngine().getRenderHeight();
-  let nowLookingAt = null;
+  let nowLookingAt = undefined;
   for (const npc of npcs) {
     if(!npc.root) continue;
     const dist = BABYLON.Vector3.Distance(player.body.getAbsolutePosition(), npc.root.getAbsolutePosition());
@@ -55,7 +61,7 @@ export function handleNPCInteractions() {
     currentlyLookingAtNPC = nowLookingAt;
     if (nowLookingAt) {
       ui.npcPromptName.text(nowLookingAt.name); ui.npcPrompt.removeClass("hidden");
-      if(gameSettings.debugMode) console.log(`[NPC] Looking at: "${nowLookingAt.name}"`);
+      if(gameSettings.debugMode) console.log("NPC: Looking at: '"+nowLookingAt.name+"'");
     } else {
       ui.npcPrompt.addClass("hidden");
     }

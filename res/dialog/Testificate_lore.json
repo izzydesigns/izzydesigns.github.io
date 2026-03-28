@@ -1,0 +1,56 @@
+{
+  "start": "lore_intro",
+  "nodes": {
+    "lore_intro": {
+      "character": "Testificate",
+      "cameraTarget": "npc_Testificate",
+      "cutsceneBars": true,
+      "text": "Is there something you'd like to know?",
+      "choices": [
+        { "text": "How did you lose your items?", "next": "lore_1" },
+        { "text": "Nevermind.", "next": "lore_nevermind" }
+      ]
+    },
+    "lore_nevermind": {
+      "character": "Testificate",
+      "text": "See you around!"
+    },
+    "lore_1": {
+      "character": "Testificate",
+      "cameraTarget": "npc_Testificate",
+      "cutsceneBars": true,
+      "text": "Oh, you want to know the real story? Why those items were scattered everywhere in the first place?",
+      "next": "lore_2"
+    },
+    "lore_2": {
+      "character": "Testificate",
+      "text": "Okay, okay. So. It was 3 in the morning. And I got the zoomies. Like, SERIOUS zoomies. I mean I was absolutely unhinged.",
+      "next": "lore_3"
+    },
+    "lore_3": {
+      "character": "Testificate",
+      "text": "I launched myself off the couch, rebounded off the bookshelf, slid across the kitchen floor, and somehow ended up in every single room in this house within about forty-five seconds.",
+      "next": "lore_4"
+    },
+    "lore_4": {
+      "character": "Testificate",
+      "text": "Every item I had went flying. I honestly have no memory of most of it. It was just pure instinct.",
+      "next": "lore_5"
+    },
+    "lore_5": {
+      "character": "Testificate",
+      "text": "By the time the sun came up I had no idea where anything was, and I was way too embarrassed to admit what happened. So I just... waited.",
+      "next": "lore_6"
+    },
+    "lore_6": {
+      "character": "Testificate",
+      "cutsceneBars": true,
+      "text": "Anyway. Thank you again. I really do treasure those items. Each one of them means a lot to me.",
+      "next": "lore_7"
+    },
+    "lore_7": {
+      "character": "Testificate",
+      "text": "...I'm probably going to do it again tonight though. I can already feel my zoomies building up again >:3"
+    }
+  }
+}

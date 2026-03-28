@@ -4,7 +4,7 @@ let lastAnimChangeTime = 0, lastMenuState = "";
 
 /** @desc Used to apply specific qualities to all/some animations (mainly used to assign default animation weight & blending status) */
 export function getSceneAnimations() {
-  for (let animations of scene.animationGroups) game.animations.push(animations.name)
+  for (let animGroup of scene.animationGroups) game.animations.push(animGroup.name)
   // Loop through all animationGroups in the scene & initialize their weight, enableBlending, and blendingSpeed values
   if (game.animations.length > 0) {
     for (let i = 0; i < game.animations.length; i++) {
@@ -27,12 +27,12 @@ function getAnimationState() {
     return animationData.jumpHigh;
   }else if(player.canJump && player.movement.isJumpBtnDown && !player.movement.isMoving){
     return animationData.jumpHighIdle;
-  }else if(player.swatting && !player.movement.isMoving && !player.isAfk) {
+  }else if(player.swatting && !player.movement.isMoving && !player.movement.isAfk) {
     return animationData.attack;
   }
   // Handle all onGround animations
   if(player.onGround) {
-    if(player.isBiting && player.biteTarget) {
+    if(player.movement.isBiting && player.biteTarget) {
       if(player.movement.isMoving) {
         const vel = player.body.physicsBody.getLinearVelocity();
         const horizVel = new BABYLON.Vector3(vel.x, 0, vel.z);
@@ -60,7 +60,7 @@ function getAnimationState() {
       return animationData.gallop;
     }else if(player.speed <= 0.01) {
       if(player.lastMoveTime + gameSettings.defaultAfkDelay <= game.time) {
-        if(!player.isAfk) { player.isAfk = true; }
+        if(!player.movement.isAfk) { player.movement.isAfk = true; }
         return animationData.idleSleep;
       } else { return animationData.idleStand; }
     }
@@ -80,9 +80,7 @@ export function handleAnimations() {
   if (!newState || newState === player.curAnimation || game.time - lastAnimChangeTime < gameSettings.defaultAnimChangeDelay) return;
   lastAnimChangeTime = game.time;
   stopAllAnimations();
-  const swatSpeedRatio = newState === animationData.attack
-    ? (player.movement.isSprinting ? 2.0 : player.movement.isWalking ? 0.5 : 1.0)
-    : 1.0;
+  const swatSpeedRatio = (newState === animationData.attack) ? (player.movement.isSprinting ? 2.0 : (player.movement.isWalking ? 0.5 : 1.0)) : 1.0;
   playAnimation(newState, true, 0, undefined, swatSpeedRatio);
 }
 /** @desc Creates looping float and spin BabylonJS animations on a collectable TransformNode, applied once at spawn */
